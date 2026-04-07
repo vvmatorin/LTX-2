@@ -566,7 +566,7 @@ class LtxvTrainer:
             return None
         n = self._sigma_loss_weights.shape[0]
         # sigma=1 (max noise) → index 0; sigma=0 (clean) → index n-1
-        idx = ((1.0 - sigmas) * (n - 1)).long().clamp(0, n - 1)
+        idx = ((1.0 - sigmas) * (n - 1)).long().clamp(0, n - 1).cpu()
         return self._sigma_loss_weights[idx].to(device=sigmas.device, dtype=sigmas.dtype)
 
     def _setup_lora(self) -> None:
