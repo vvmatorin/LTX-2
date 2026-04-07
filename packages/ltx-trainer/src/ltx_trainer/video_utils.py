@@ -39,6 +39,7 @@ def read_video(video_path: str | Path, max_frames: int | None = None) -> tuple[T
     with av.open(str(video_path)) as container:
         video_stream = container.streams.video[0]
         fps = float(video_stream.average_rate or video_stream.base_rate or 24)
+        fps = float(np.ceil(fps))
 
         frames = []
         for frame in container.decode(video=0):

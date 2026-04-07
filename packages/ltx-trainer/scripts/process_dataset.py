@@ -50,6 +50,7 @@ def preprocess_dataset(  # noqa: PLR0913
     reference_downscale_factor: int = 1,
     with_audio: bool = False,
     load_text_encoder_in_8bit: bool = False,
+    with_h_flip: bool = False,
 ) -> None:
     """Run the preprocessing pipeline with the given arguments."""
     # Validate dataset file
@@ -97,6 +98,7 @@ def preprocess_dataset(  # noqa: PLR0913
             vae_tiling=vae_tiling,
             with_audio=with_audio,
             audio_output_dir=str(audio_latents_dir) if audio_latents_dir else None,
+            with_h_flip=with_h_flip,
         )
 
         # Process reference videos if reference_column is provided
@@ -146,6 +148,13 @@ def preprocess_dataset(  # noqa: PLR0913
             with_audio=with_audio,
         )
         decoder.decode(latents_dir, output_base / "decoded_videos")
+
+        # Decode h_flip latents if they were produced
+        if with_h_flip:
+            h_flip_latents_dir = output_base / "latents_h_flip"
+            if h_flip_latents_dir.exists():
+                logger.info("Decoding h_flip latents...")
+                decoder.decode(h_flip_latents_dir, output_base / "decoded_videos_h_flip")
 
         # Also decode reference videos if they exist
         if reference_column:
@@ -252,6 +261,11 @@ def main(  # noqa: PLR0913
         help="Downscale factor for reference video resolution. When > 1, reference videos are processed at "
         "1/n resolution (e.g., 2 means half resolution). Used for efficient IC-LoRA training.",
     ),
+    with_h_flip: bool = typer.Option(
+        default=False,
+        help="Also encode horizontally flipped videos. Saves flipped latents to latents_h_flip/ alongside "
+        "normal latents. Required when using h_flip augmentation during training.",
+    ),
 ) -> None:
     """Preprocess a video dataset by computing and saving latents and text embeddings.
     The dataset must be a CSV, JSON, or JSONL file with columns for captions and video paths.
@@ -310,6 +324,7 @@ def main(  # noqa: PLR0913
         reference_downscale_factor=reference_downscale_factor,
         with_audio=with_audio,
         load_text_encoder_in_8bit=load_text_encoder_in_8bit,
+        with_h_flip=with_h_flip,
     )
 
 

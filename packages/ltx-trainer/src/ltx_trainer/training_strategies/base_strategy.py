@@ -3,7 +3,6 @@ This module defines the abstract base class that all training strategies must im
 along with the base configuration class.
 """
 
-import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -54,6 +53,10 @@ class ModelInputs:
     # Masks for loss computation
     video_loss_mask: Tensor  # Boolean mask: True = compute loss for this token
     audio_loss_mask: Tensor | None
+
+    # Optional per-sample loss weights derived from sigma (e.g. bell weighting).
+    # Shape: [batch_size]. Applied after the token-level mask normalization.
+    sigma_loss_weights: Tensor | None = None
 
     # Metadata needed for loss computation in some strategies
     ref_seq_len: int | None = None  # For IC-LoRA: length of reference sequence
@@ -254,9 +257,10 @@ class TrainingStrategy(ABC):
         """
         conditioning_mask = torch.zeros(batch_size, sequence_length, dtype=torch.bool, device=device)
 
-        if first_frame_conditioning_p > 0 and random.random() < first_frame_conditioning_p:
+        if first_frame_conditioning_p > 0:
             first_frame_end_idx = height * width
             if first_frame_end_idx < sequence_length:
-                conditioning_mask[:, :first_frame_end_idx] = True
+                apply_mask = torch.rand(batch_size, device=device) < first_frame_conditioning_p
+                conditioning_mask[apply_mask, :first_frame_end_idx] = True
 
         return conditioning_mask

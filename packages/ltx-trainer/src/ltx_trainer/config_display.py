@@ -61,7 +61,8 @@ def print_config(config: LtxTrainerConfig) -> None:
         strategy_items.append(("Audio", fmt(cfg.training_strategy.with_audio)))
     if hasattr(cfg.training_strategy, "first_frame_conditioning_p"):
         strategy_items.append(("First Frame Cond P", str(cfg.training_strategy.first_frame_conditioning_p)))
-
+    if hasattr(cfg.training_strategy, "h_flip"):
+        strategy_items.append(("H-Flip", fmt(cfg.training_strategy.h_flip)))
     sections.append(("🎯 Strategy", strategy_items))
 
     sections.extend(
@@ -77,6 +78,8 @@ def print_config(config: LtxTrainerConfig) -> None:
                     ("Scheduler", opt.scheduler_type),
                     ("Max Grad Norm", str(opt.max_grad_norm)),
                     ("Grad Checkpointing", fmt(opt.enable_gradient_checkpointing)),
+                    ("Timestep Sampling", cfg.flow_matching.timestep_sampling_mode),
+                    ("Loss Weighting", cfg.flow_matching.timestep_loss_weighting),
                 ],
             ),
             (
@@ -123,7 +126,7 @@ def print_config(config: LtxTrainerConfig) -> None:
                         if cfg.checkpoints.interval
                         else "[dim]Disabled[/]",
                     ),
-                    ("W&B", f"{cfg.wandb.project}" if cfg.wandb.enabled else "[dim]Disabled[/]"),
+                    ("TensorBoard", "Enabled" if cfg.tensorboard.enabled else "[dim]Disabled[/]"),
                     ("HF Hub", cfg.hub.hub_model_id if cfg.hub.push_to_hub else "[dim]Disabled[/]"),
                 ],
             ),

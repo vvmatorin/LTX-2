@@ -122,9 +122,14 @@ class OptimizationConfig(ConfigBaseModel):
         description="Maximum gradient norm for clipping",
     )
 
-    optimizer_type: Literal["adamw", "adamw8bit"] = Field(
+    optimizer_type: Literal["adamw", "adamw8bit", "muon"] = Field(
         default="adamw",
         description="Type of optimizer to use for training",
+    )
+
+    optimizer_params: dict = Field(
+        default_factory=dict,
+        description="Extra keyword arguments forwarded to the optimizer constructor",
     )
 
     scheduler_type: Literal[
@@ -133,6 +138,8 @@ class OptimizationConfig(ConfigBaseModel):
         "cosine",
         "cosine_with_restarts",
         "polynomial",
+        "step",
+        "lambda_warmup",
     ] = Field(
         default="linear",
         description="Type of scheduler to use for training",
@@ -398,6 +405,21 @@ class CheckpointsConfig(ConfigBaseModel):
         description="Precision to use when saving checkpoint weights. Options: 'bfloat16' or 'float32'.",
     )
 
+    no_resume: bool = Field(
+        default=False,
+        description="When True, ignore any saved training state and start from step 0. "
+        "Model weights from load_checkpoint are still loaded, but optimizer/scheduler "
+        "state and step counter are reset.",
+    )
+
+    save_training_state: Literal["full", "minimal", "off"] = Field(
+        default="minimal",
+        description="Save training state alongside checkpoints for resume. "
+        "'full': optimizer + scheduler + RNG + step (~800MB for LoRA, much larger for full fine-tuning). "
+        "'minimal': scheduler + RNG + step only (~few KB, sufficient for LoRA). "
+        "'off': nothing saved, resume not possible.",
+    )
+
 
 class HubConfig(ConfigBaseModel):
     """Configuration for Hugging Face Hub integration"""
@@ -415,32 +437,12 @@ class HubConfig(ConfigBaseModel):
         return self
 
 
-class WandbConfig(ConfigBaseModel):
-    """Configuration for Weights & Biases logging"""
+class TensorboardConfig(ConfigBaseModel):
+    """Configuration for TensorBoard logging"""
 
     enabled: bool = Field(
-        default=False,
-        description="Whether to enable W&B logging",
-    )
-
-    project: str = Field(
-        default="ltxv-trainer",
-        description="W&B project name",
-    )
-
-    entity: str | None = Field(
-        default=None,
-        description="W&B username or team",
-    )
-
-    tags: list[str] = Field(
-        default_factory=list,
-        description="Tags to add to the W&B run",
-    )
-
-    log_validation_videos: bool = Field(
         default=True,
-        description="Whether to log validation videos to W&B",
+        description="Whether to enable TensorBoard logging",
     )
 
 
@@ -455,6 +457,14 @@ class FlowMatchingConfig(ConfigBaseModel):
     timestep_sampling_params: dict = Field(
         default_factory=dict,
         description="Parameters for timestep sampling",
+    )
+
+    timestep_loss_weighting: Literal["none", "bell"] = Field(
+        default="none",
+        description="Per-timestep loss weighting scheme applied after the token-level mask. "
+        "'none': all timesteps weighted equally (default). "
+        "'bell': bell-shaped weights peaking at sigma≈0.5, matching ai-toolkit's 'weighted' "
+        "timestep mode — downweights very high and very low noise levels.",
     )
 
 
@@ -475,7 +485,7 @@ class LtxTrainerConfig(ConfigBaseModel):
     checkpoints: CheckpointsConfig = Field(default_factory=CheckpointsConfig)
     hub: HubConfig = Field(default_factory=HubConfig)
     flow_matching: FlowMatchingConfig = Field(default_factory=FlowMatchingConfig)
-    wandb: WandbConfig = Field(default_factory=WandbConfig)
+    tensorboard: TensorboardConfig = Field(default_factory=TensorboardConfig)
 
     # General configuration
     seed: int = Field(

@@ -63,6 +63,7 @@ AUDIO_FREQUENCY_BINS = 16
 DEFAULT_TILE_SIZE = 512  # Spatial tile size in pixels (must be ≥64 and divisible by 32)
 DEFAULT_TILE_OVERLAP = 128  # Spatial tile overlap in pixels (must be divisible by 32)
 
+
 app = typer.Typer(
     pretty_exceptions_enable=False,
     no_args_is_help=True,
@@ -373,7 +374,9 @@ class MediaDataset(Dataset):
         # Keep only buckets with <= available frames
         relevant_buckets = [b for b in self.resolution_buckets if b[0] <= num_frames]
         if not relevant_buckets:
-            raise ValueError(f"No resolution buckets have <= {num_frames} frames. Available: {self.resolution_buckets}")
+            raise ValueError(
+                f"No resolution buckets have <= {num_frames} frames. Available: {self.resolution_buckets}"
+            )
 
         # Find the bucket with the minimal distance (according to the function above) to the media item's shape.
         nearest_bucket = min(relevant_buckets, key=distance)
@@ -444,6 +447,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     vae_tiling: bool = False,
     with_audio: bool = False,
     audio_output_dir: str | None = None,
+    with_h_flip: bool = False,
 ) -> None:
     """
     Process videos and save latent representations.
@@ -457,9 +461,10 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         main_media_column: Column name for main media paths (if different from video_column)
         batch_size: Batch size for processing
         device: Device to use for computation
-        vae_tiling: Whether to enable VAE tiling
+        vae_tiling: Whether to enable VAE tiling (for the standard encode path)
         with_audio: Whether to extract and encode audio from videos
         audio_output_dir: Directory to save audio latents (required if with_audio=True)
+        with_h_flip: Whether to also encode horizontally flipped videos and save to a sibling directory
     """
     # Validate audio parameters
     if with_audio and audio_output_dir is None:
@@ -487,6 +492,13 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     if with_audio:
         audio_output_path = Path(audio_output_dir)
         audio_output_path.mkdir(parents=True, exist_ok=True)
+
+    # Set up h_flip output directory (sibling to the normal latents dir)
+    h_flip_output_path = None
+    if with_h_flip:
+        h_flip_output_path = output_path.parent / "latents_h_flip"
+        h_flip_output_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"H-flip augmentation enabled. Flipped latents will be saved to {h_flip_output_path}")
 
     # Load video VAE encoder
     with console.status(f"[bold]Loading video VAE encoder from [cyan]{model_path}[/]...", spinner="dots"):
@@ -543,6 +555,14 @@ def compute_latents(  # noqa: PLR0913, PLR0915
             with torch.inference_mode():
                 video_latent_data = encode_video(vae=vae, video=video, use_tiling=vae_tiling)
 
+                h_flip_latent_data = None
+                if with_h_flip:
+                    h_flip_latent_data = encode_video(
+                        vae=vae,
+                        video=video.flip(dims=[-1]),
+                        use_tiling=vae_tiling,
+                    )
+
             # Save latents for each item in batch
             for i in range(len(batch["relative_path"])):
                 output_rel_path = Path(batch["main_media_relative_path"][i]).with_suffix(".pt")
@@ -561,6 +581,21 @@ def compute_latents(  # noqa: PLR0913, PLR0915
                 }
 
                 torch.save(latent_data, output_file)
+
+                # Save h_flip latents
+                if h_flip_latent_data is not None:
+                    h_flip_file = h_flip_output_path / output_rel_path
+                    h_flip_file.parent.mkdir(parents=True, exist_ok=True)
+
+                    h_flip_data = {
+                        "latents": h_flip_latent_data["latents"][i].cpu().contiguous(),
+                        "num_frames": h_flip_latent_data["num_frames"],
+                        "height": h_flip_latent_data["height"],
+                        "width": h_flip_latent_data["width"],
+                        "fps": batch["video_metadata"]["fps"][i].item(),
+                    }
+
+                    torch.save(h_flip_data, h_flip_file)
 
                 # Process audio if enabled (audio is already extracted by the dataset)
                 if with_audio:
@@ -598,6 +633,8 @@ def compute_latents(  # noqa: PLR0913, PLR0915
 
     # Log summary
     logger.info(f"Processed {len(dataset)} videos. Latents saved to {output_path}")
+    if with_h_flip:
+        logger.info(f"H-flip latents saved to {h_flip_output_path}")
     if with_audio:
         logger.info(
             f"Audio processing: {audio_success_count} videos with audio, "
@@ -981,6 +1018,10 @@ def main(  # noqa: PLR0913
         default=None,
         help="Output directory for audio latents (required if --with-audio is set)",
     ),
+    with_h_flip: bool = typer.Option(
+        default=False,
+        help="Also encode horizontally flipped videos and save to a sibling latents_h_flip/ directory",
+    ),
 ) -> None:
     """Process videos/images and save latent representations for video generation training.
     This script processes videos and images from metadata files and saves latent representations
@@ -1032,6 +1073,7 @@ def main(  # noqa: PLR0913
         vae_tiling=vae_tiling,
         with_audio=with_audio,
         audio_output_dir=audio_output_dir,
+        with_h_flip=with_h_flip,
     )
 
 

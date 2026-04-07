@@ -45,6 +45,12 @@ class TextToVideoConfig(TrainingStrategyConfigBase):
         description="Directory name for audio latents when with_audio is True",
     )
 
+    h_flip: bool = Field(
+        default=False,
+        description="Whether to apply random horizontal flip augmentation during training "
+        "(50% chance per sample). Requires the dataset to be preprocessed with --with-h-flip.",
+    )
+
 
 class TextToVideoStrategy(TrainingStrategy):
     """Text-to-video training strategy.
@@ -278,6 +284,11 @@ class TextToVideoStrategy(TrainingStrategy):
         video_loss = (video_pred - inputs.video_targets).pow(2)
         video_loss_mask = inputs.video_loss_mask.unsqueeze(-1).float()
         video_loss = video_loss.mul(video_loss_mask).div(video_loss_mask.mean())
+
+        # Apply per-sample sigma loss weights (e.g. bell weighting) if configured
+        if inputs.sigma_loss_weights is not None:
+            video_loss = video_loss * inputs.sigma_loss_weights.view(-1, 1, 1)
+
         video_loss = video_loss.mean()
 
         # If no audio, return video loss only
@@ -285,7 +296,10 @@ class TextToVideoStrategy(TrainingStrategy):
             return video_loss
 
         # Audio loss (no conditioning mask)
-        audio_loss = (audio_pred - inputs.audio_targets).pow(2).mean()
+        audio_loss = (audio_pred - inputs.audio_targets).pow(2)
+        if inputs.sigma_loss_weights is not None:
+            audio_loss = audio_loss * inputs.sigma_loss_weights.view(-1, 1, 1)
+        audio_loss = audio_loss.mean()
 
         # Combined loss
         return video_loss + audio_loss

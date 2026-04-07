@@ -84,7 +84,12 @@ class DummyDataset(Dataset):
 
 
 class PrecomputedDataset(Dataset):
-    def __init__(self, data_root: str, data_sources: dict[str, str] | list[str] | None = None) -> None:
+    def __init__(
+        self,
+        data_root: str,
+        data_sources: dict[str, str] | list[str] | None = None,
+        h_flip: bool = False,
+    ) -> None:
         """
         Generic dataset for loading precomputed data from multiple sources.
         Args:
@@ -93,6 +98,9 @@ class PrecomputedDataset(Dataset):
               - Dict mapping directory names to output keys
               - List of directory names (keys will equal values)
               - None (defaults to ["latents", "conditions"])
+            h_flip: Whether to enable horizontal flip augmentation. When True, each sample
+                has a 50% chance of loading from ``latents_h_flip/`` instead of ``latents/``.
+                Requires the dataset to be preprocessed with ``--with-h-flip``.
         Example:
             # Standard mode (list)
             dataset = PrecomputedDataset("data/", ["latents", "conditions"])
@@ -111,6 +119,8 @@ class PrecomputedDataset(Dataset):
         self.source_paths = self._setup_source_paths()
         self.sample_files = self._discover_samples()
         self._validate_setup()
+        self.h_flip = h_flip
+        self.h_flip_latents_path = self._discover_h_flip_latents()
 
     @staticmethod
     def _setup_data_root(data_root: str) -> Path:
@@ -159,7 +169,7 @@ class PrecomputedDataset(Dataset):
         # Use first data source as the reference to discover samples
         data_key = "latents" if "latents" in self.data_sources else next(iter(self.data_sources.keys()))
         data_path = self.source_paths[data_key]
-        data_files = list(data_path.glob("**/*.pt"))
+        data_files = sorted(list(data_path.glob("**/*.pt")))
 
         if not data_files:
             raise ValueError(f"No data files found in {data_path}")
@@ -215,18 +225,45 @@ class PrecomputedDataset(Dataset):
         if len(set(sample_counts.values())) > 1:
             raise ValueError(f"Mismatched sample counts across sources: {sample_counts}")
 
+    def _discover_h_flip_latents(self) -> Path | None:
+        """Discover the ``latents_h_flip/`` sibling directory for horizontal flip augmentation.
+
+        Returns the resolved Path if the directory exists, or None if h_flip is disabled.
+        Raises FileNotFoundError if h_flip is enabled but the directory is missing.
+        """
+        h_flip_dir = self.data_root / "latents_h_flip"
+
+        if not self.h_flip:
+            return None
+
+        if not h_flip_dir.exists():
+            raise FileNotFoundError(
+                f"h_flip is enabled but '{h_flip_dir}' does not exist. "
+                f"Re-run dataset preprocessing with --with-h-flip to generate flipped latents."
+            )
+
+        logger.info(f"H-flip augmentation enabled, using flipped latents from {h_flip_dir}")
+        return h_flip_dir
+
     def __len__(self) -> int:
         # Use the first output key as reference count
         first_key = next(iter(self.sample_files.keys()))
         return len(self.sample_files[first_key])
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        # Decide whether to use horizontally flipped latents (50% chance)
+        use_h_flip = self.h_flip_latents_path is not None and torch.rand(1).item() < 0.5
+
         result = {}
 
         for dir_name, output_key in self.data_sources.items():
             source_path = self.source_paths[dir_name]
             file_rel_path = self.sample_files[output_key][index]
-            file_path = source_path / file_rel_path
+
+            if use_h_flip and dir_name == "latents":
+                file_path = self.h_flip_latents_path / file_rel_path
+            else:
+                file_path = source_path / file_rel_path
 
             try:
                 data = torch.load(file_path, map_location="cpu", weights_only=True)
@@ -238,6 +275,10 @@ class PrecomputedDataset(Dataset):
                 result[output_key] = data
             except Exception as e:
                 raise RuntimeError(f"Failed to load {output_key} from {file_path}: {e}") from e
+
+            # Track the latents filename for logging in the trainer
+            if dir_name == "latents":
+                result["_sample_path"] = str(file_rel_path)
 
         # Add index for debugging
         result["idx"] = index
