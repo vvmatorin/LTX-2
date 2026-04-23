@@ -163,7 +163,7 @@ class TextToVideoStrategy(TrainingStrategy):
             batch_size=batch_size,
             fps=fps,
             device=device,
-            dtype=dtype,
+            dtype=torch.float32,
         )
 
         # Create video Modality
@@ -280,14 +280,15 @@ class TextToVideoStrategy(TrainingStrategy):
         inputs: ModelInputs,
     ) -> Tensor:
         """Compute masked MSE loss for video and optionally audio."""
-        # Video loss
+        # Video loss: normalize per-sample over (seq, channels), then reduce to scalar
         video_loss = (video_pred - inputs.video_targets).pow(2)
         video_loss_mask = inputs.video_loss_mask.unsqueeze(-1).float()
-        video_loss = video_loss.mul(video_loss_mask).div(video_loss_mask.mean())
+        video_loss = video_loss.mul(video_loss_mask).mean(dim=[-2, -1])
+        video_loss = video_loss.div(video_loss_mask.mean(dim=[-2, -1]).clamp(min=1e-8))
 
         # Apply per-sample sigma loss weights (e.g. bell weighting) if configured
         if inputs.sigma_loss_weights is not None:
-            video_loss = video_loss * inputs.sigma_loss_weights.view(-1, 1, 1)
+            video_loss = video_loss * inputs.sigma_loss_weights
 
         video_loss = video_loss.mean()
 
@@ -295,10 +296,10 @@ class TextToVideoStrategy(TrainingStrategy):
         if not self.config.with_audio or audio_pred is None or inputs.audio_targets is None:
             return video_loss
 
-        # Audio loss (no conditioning mask)
-        audio_loss = (audio_pred - inputs.audio_targets).pow(2)
+        # Audio loss
+        audio_loss = (audio_pred - inputs.audio_targets).pow(2).mean(dim=[-2, -1])
         if inputs.sigma_loss_weights is not None:
-            audio_loss = audio_loss * inputs.sigma_loss_weights.view(-1, 1, 1)
+            audio_loss = audio_loss * inputs.sigma_loss_weights
         audio_loss = audio_loss.mean()
 
         # Combined loss

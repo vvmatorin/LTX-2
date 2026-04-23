@@ -261,9 +261,10 @@ class LtxvTrainer:
                     # Update progress and log metrics
                     current_lr = self._optimizer.param_groups[0]["lr"]
                     step_time = (time.time() - step_start_time) * cfg.optimization.gradient_accumulation_steps
+                    step_loss = loss.detach().item()
 
                     progress.update_training(
-                        loss=loss.item(),
+                        loss=step_loss,
                         lr=current_lr,
                         step_time=step_time,
                         advance=is_optimization_step,
@@ -273,7 +274,7 @@ class LtxvTrainer:
                     if IS_MAIN_PROCESS and is_optimization_step:
                         metrics = {
                             "train/global_step": self._global_step,
-                            "train/loss": loss.item(),
+                            "train/loss": step_loss,
                             "train/learning_rate": current_lr,
                         }
                         if grad_norm is not None:
@@ -291,7 +292,7 @@ class LtxvTrainer:
                             total_time = "calculating..."
                         logger.info(
                             f"Step {self._global_step}/{cfg.optimization.steps} - "
-                            f"Loss: {loss.item():.4f}, LR: {current_lr:.2e}, "
+                            f"Loss: {step_loss:.4f}, LR: {current_lr:.2e}, "
                             f"Time/Step: {step_time:.2f}s, Total Time: {total_time}",
                         )
 

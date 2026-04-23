@@ -34,15 +34,42 @@ class GemmaTextEncoder(torch.nn.Module):
         padding_side: str = "left",  # noqa: ARG002
     ) -> tuple[tuple[torch.Tensor, ...], torch.Tensor]:
         """Run Gemma LLM and return raw hidden states + attention mask.
-        Calls the inner model (self.model.model) to skip lm_head logits computation (~500 MiB saving).
+
+        The forward pass is run in float32 to preserve precision through the
+        48 transformer layers (attention softmax and outlier tokens compound
+        divergence in bfloat16). Hidden states are cast back to the original
+        weight dtype before returning.
+
+        Calls the inner model (self.model.model) to skip lm_head logits
+        computation (~500 MiB saving).
+
         Returns:
             (hidden_states, attention_mask) where hidden_states is a tuple of per-layer tensors.
         """
         token_pairs = self.tokenizer.tokenize_with_weights(text)["gemma"]
         input_ids = torch.tensor([[t[0] for t in token_pairs]], device=self.model.device)
         attention_mask = torch.tensor([[w[1] for w in token_pairs]], device=self.model.device)
-        outputs = self.model.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
-        hidden_states = outputs.hidden_states
+
+        first_param = next(self.model.model.parameters(), None)
+        original_dtype = first_param.dtype if first_param is not None else None
+
+        upcasted = False
+        if original_dtype is not None and original_dtype != torch.float32:
+            try:
+                self.model.model.to(torch.float32)
+                upcasted = True
+            except (RuntimeError, TypeError):
+                pass
+
+        try:
+            outputs = self.model.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
+            hidden_states = outputs.hidden_states
+            if upcasted:
+                hidden_states = tuple(h.to(original_dtype) for h in hidden_states)
+        finally:
+            if upcasted:
+                self.model.model.to(original_dtype)
+
         del outputs
         return hidden_states, attention_mask
 
@@ -73,7 +100,7 @@ class GemmaTextEncoder(torch.nn.Module):
                 do_sample=True,
                 temperature=0.7,
             )
-            generated_ids = outputs[0][len(model_inputs.input_ids[0]) :]
+            generated_ids = outputs[0][len(model_inputs.input_ids[0]):]
             enhanced_prompt = self.processor.tokenizer.decode(generated_ids, skip_special_tokens=True)
 
         return enhanced_prompt
