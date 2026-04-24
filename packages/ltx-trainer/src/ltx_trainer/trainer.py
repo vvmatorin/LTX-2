@@ -33,7 +33,7 @@ from ltx_core.text_encoders.gemma import convert_to_additive_mask
 from ltx_trainer import logger
 from ltx_trainer.config import LtxTrainerConfig
 from ltx_trainer.config_display import print_config
-from ltx_trainer.datasets import PrecomputedDataset
+from ltx_trainer.datasets import PrecomputedDataset, collate_with_optional_audio
 from ltx_trainer.gpu_utils import free_gpu_memory, free_gpu_memory_context, get_gpu_memory_gb
 from ltx_trainer.hf_hub_utils import push_to_hub
 from ltx_trainer.model_loader import load_embeddings_processor, load_text_encoder
@@ -809,6 +809,7 @@ class LtxvTrainer:
             num_workers=num_workers,
             pin_memory=num_workers > 0,
             persistent_workers=num_workers > 0,
+            collate_fn=collate_with_optional_audio if self._training_strategy.requires_audio else None,
         )
 
         self._dataloader = self._accelerator.prepare(dataloader)

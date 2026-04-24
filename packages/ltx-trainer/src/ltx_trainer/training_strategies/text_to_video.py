@@ -255,14 +255,17 @@ class TextToVideoStrategy(TrainingStrategy):
         Returns:
             Tuple of (audio_modality, audio_targets, audio_loss_mask)
         """
-        # Get audio latents - dataset provides uniform non-patchified format [B, C, T, F]
         audio_data = batch["audio_latents"]
-        audio_latents = audio_data["latents"]
+        has_audio = audio_data.get("has_audio", torch.ones(batch_size, dtype=torch.bool))
+        has_audio = has_audio.to(device)
 
-        # Patchify audio latents: [B, C, T, F] -> [B, T, C*F]
-        audio_latents = self._audio_patchifier.patchify(audio_latents)
-
-        audio_seq_len = audio_latents.shape[1]
+        if has_audio.any():
+            audio_latents = audio_data["latents"].to(device=device, dtype=dtype)
+            audio_latents = self._audio_patchifier.patchify(audio_latents)
+            audio_seq_len = audio_latents.shape[1]
+        else:
+            audio_seq_len = 1
+            audio_latents = torch.zeros(batch_size, audio_seq_len, 128, device=device, dtype=dtype)
 
         # Sample audio noise
         audio_noise = torch.randn_like(audio_latents)
@@ -296,8 +299,8 @@ class TextToVideoStrategy(TrainingStrategy):
             context_mask=prompt_attention_mask,
         )
 
-        # Audio loss mask: all tokens contribute to loss (no conditioning)
-        audio_loss_mask = torch.ones(batch_size, audio_seq_len, dtype=torch.bool, device=device)
+        # Audio loss mask: True = compute loss. False for video-only samples.
+        audio_loss_mask = has_audio.unsqueeze(1).expand(-1, audio_seq_len)
 
         return audio_modality, audio_targets, audio_loss_mask
 
@@ -324,11 +327,19 @@ class TextToVideoStrategy(TrainingStrategy):
         if not self.config.with_audio or audio_pred is None or inputs.audio_targets is None:
             return video_loss
 
-        # Audio loss
-        audio_loss = (audio_pred - inputs.audio_targets).pow(2).mean(dim=[-2, -1])
+        # Audio loss with masking (video-only samples contribute zero audio loss).
+        audio_loss_mask = inputs.audio_loss_mask.unsqueeze(-1).float()
+        audio_loss = (audio_pred - inputs.audio_targets).pow(2)
+        audio_loss = audio_loss.mul(audio_loss_mask).mean(dim=[-2, -1])
+
         if inputs.sigma_loss_weights is not None:
             audio_loss = audio_loss * inputs.sigma_loss_weights
-        audio_loss = audio_loss.mean()
 
-        # Combined loss
+        mask_mean = audio_loss_mask.mean(dim=[-2, -1])
+        has_audio = mask_mean > 0
+        if has_audio.any():
+            audio_loss = (audio_loss[has_audio] / mask_mean[has_audio]).mean()
+        else:
+            audio_loss = audio_loss.sum() * 0.0  # zero but graph-connected for DDP safety
+
         return video_loss + audio_loss
