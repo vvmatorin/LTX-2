@@ -265,6 +265,9 @@ class PrecomputedDataset(Dataset):
 
         Returns the resolved Path if the directory exists, or None if h_flip is disabled.
         Raises FileNotFoundError if h_flip is enabled but the directory is missing.
+
+        Individual samples without a flipped counterpart file are handled gracefully
+        at load time by falling back to the original latent.
         """
         h_flip_dir = self.data_root / "latents_h_flip"
 
@@ -301,10 +304,11 @@ class PrecomputedDataset(Dataset):
 
             source_path = self.source_paths[dir_name]
 
+            file_path = source_path / file_rel_path
             if use_h_flip and dir_name == "latents":
-                file_path = self.h_flip_latents_path / file_rel_path
-            else:
-                file_path = source_path / file_rel_path
+                h_flip_path = self.h_flip_latents_path / file_rel_path
+                if h_flip_path.exists():
+                    file_path = h_flip_path
 
             try:
                 data = torch.load(file_path, map_location="cpu", weights_only=True)
