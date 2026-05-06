@@ -29,6 +29,7 @@ def apply_rotary_emb(
 def apply_interleaved_rotary_emb(
     input_tensor: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor
 ) -> torch.Tensor:
+    orig_dtype = input_tensor.dtype
     t_dup = rearrange(input_tensor, "... (d r) -> ... d r", r=2)
     t1, t2 = t_dup.unbind(dim=-1)
     t_dup = torch.stack((-t2, t1), dim=-1)
@@ -36,12 +37,13 @@ def apply_interleaved_rotary_emb(
 
     out = input_tensor * cos_freqs + input_tensor_rot * sin_freqs
 
-    return out
+    return out.to(orig_dtype)
 
 
 def apply_split_rotary_emb(
     input_tensor: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor
 ) -> torch.Tensor:
+    orig_dtype = input_tensor.dtype
     needs_reshape = False
     if input_tensor.ndim != 4 and cos_freqs.ndim == 4:
         b, h, t, _ = cos_freqs.shape
@@ -52,6 +54,7 @@ def apply_split_rotary_emb(
     first_half_input = split_input[..., :1, :]
     second_half_input = split_input[..., 1:, :]
 
+    # bf16 × float32 → float32 via type promotion when cos_freqs is float32
     output = split_input * cos_freqs.unsqueeze(-2)
     first_half_output = output[..., :1, :]
     second_half_output = output[..., 1:, :]
@@ -63,7 +66,7 @@ def apply_split_rotary_emb(
     if needs_reshape:
         output = output.swapaxes(1, 2).reshape(b, t, -1)
 
-    return output
+    return output.to(orig_dtype)
 
 
 @functools.lru_cache(maxsize=5)

@@ -136,7 +136,7 @@ class TransformerArgsPreprocessor:
         pe = precompute_freqs_cis(
             positions,
             dim=inner_dim,
-            out_dtype=x_dtype,
+            out_dtype=torch.float32,
             theta=self.positional_embedding_theta,
             max_pos=max_pos,
             use_middle_indices_grid=use_middle_indices_grid,

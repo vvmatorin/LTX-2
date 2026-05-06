@@ -65,6 +65,27 @@ class TextToVideoConfig(TrainingStrategyConfigBase):
         le=1.0,
     )
 
+    temporal_boundary_loss_weight: float = Field(
+        default=1.0,
+        description=(
+            "Loss weight multiplier applied to the first N non-conditioning frames immediately "
+            "following the conditioned first frame. Values > 1.0 increase gradient signal at the "
+            "temporal boundary, strengthening the model's use of the conditioning anchor. "
+            "Only active when first_frame_conditioning_p > 0. "
+            "Recommended range: 1.5–3.0. Default 1.0 (disabled)."
+        ),
+        ge=1.0,
+    )
+
+    temporal_boundary_frames: int = Field(
+        default=1,
+        description=(
+            "Number of non-conditioning latent frames to apply temporal_boundary_loss_weight to. "
+            "Only active when temporal_boundary_loss_weight > 1.0."
+        ),
+        ge=1,
+    )
+
 
 class TextToVideoStrategy(TrainingStrategy):
     """Text-to-video training strategy.
@@ -205,8 +226,16 @@ class TextToVideoStrategy(TrainingStrategy):
             context_mask=prompt_attention_mask,
         )
 
-        # Video loss mask: True for tokens we want to compute loss on (non-conditioning tokens)
-        video_loss_mask = ~video_conditioning_mask
+        # Video loss mask: float weights for loss computation (0 = excluded, 1 = normal, >1 = boosted)
+        if self.config.temporal_boundary_loss_weight > 1.0 and video_conditioning_mask.any():
+            frame_size = height * width
+            boundary_end = frame_size + self.config.temporal_boundary_frames * frame_size
+            cond_active = video_conditioning_mask[:, :frame_size].any(dim=1)
+            weight_mask = torch.ones(batch_size, video_seq_len, device=device)
+            weight_mask[cond_active, frame_size:boundary_end] = self.config.temporal_boundary_loss_weight
+            video_loss_mask = weight_mask * (~video_conditioning_mask).float()
+        else:
+            video_loss_mask = (~video_conditioning_mask).float()
 
         # Handle audio if enabled
         audio_modality = None
@@ -342,4 +371,4 @@ class TextToVideoStrategy(TrainingStrategy):
         else:
             audio_loss = audio_loss.sum() * 0.0  # zero but graph-connected for DDP safety
 
-        return video_loss + audio_loss
+        return video_loss + 0.2 * audio_loss

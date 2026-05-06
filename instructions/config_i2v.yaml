@@ -21,6 +21,9 @@ training_strategy:
   with_audio: true
   audio_latents_dir: audio_latents
   h_flip: true
+  first_frame_conditioning_noise: 0.05
+  temporal_boundary_loss_weight: 1.5
+  temporal_boundary_frames: 3
 optimization:
   learning_rate: 0.0005
   steps: 11200
