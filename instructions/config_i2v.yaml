@@ -4,9 +4,9 @@ model:
   training_mode: lora
   load_checkpoint: null
 lora:
-  rank: 32
-  alpha: 32
-  dropout: 0.0
+  rank: 48
+  alpha: 48
+  dropout: 0.05
   target_modules:
   - to_k
   - to_q
@@ -22,19 +22,21 @@ training_strategy:
   audio_latents_dir: audio_latents
   h_flip: true
   first_frame_conditioning_noise: 0.05
-  temporal_boundary_loss_weight: 1.5
+  temporal_boundary_loss_weight: 1.2
   temporal_boundary_frames: 3
 optimization:
-  learning_rate: 0.0005
+  learning_rate: 0.00001
   steps: 11200
   batch_size: 1
   gradient_accumulation_steps: 1
   max_grad_norm: 1.0
   optimizer_type: muon
   optimizer_params:
-    weight_decay: 0.01
-  scheduler_type: constant
-  scheduler_params: {}
+    adjust_lr_fn: match_rms_adamw
+    weight_decay: 0.0001
+  scheduler_type: lambda_warmup
+  scheduler_params:
+    num_warmup_steps: 560
   enable_gradient_checkpointing: true
 acceleration:
   mixed_precision_mode: 'bf16'
@@ -42,7 +44,7 @@ acceleration:
   load_text_encoder_in_8bit: false
 data:
   preprocessed_data_root: /path/to/videos/.precomputed
-  num_dataloader_workers: 2
+  num_dataloader_workers: 4
 validation:
   prompts:
   - prompt_1
@@ -74,7 +76,7 @@ checkpoints:
 flow_matching:
   timestep_sampling_mode: uniform
   timestep_sampling_params: {}
-  timestep_loss_weighting: "bell"
+  timestep_loss_weighting: "weighted"
 hub:
   push_to_hub: false
   hub_model_id: null

@@ -529,9 +529,11 @@ class LtxvTrainer:
         sampler_cls = SAMPLERS[self._config.flow_matching.timestep_sampling_mode]
         self._timestep_sampler = sampler_cls(**self._config.flow_matching.timestep_sampling_params)
 
-        if self._config.flow_matching.timestep_loss_weighting == "bell":
+        weighting = self._config.flow_matching.timestep_loss_weighting
+        if weighting == "bell":
             self._sigma_loss_weights = self._precompute_bell_weights()
-            logger.info("Bell-shaped timestep loss weighting enabled (ai-toolkit compatible)")
+        elif weighting == "weighted":
+            self._sigma_loss_weights = self._load_weighted_scheme()
         else:
             self._sigma_loss_weights = None
 
@@ -554,8 +556,20 @@ class LtxvTrainer:
         y_shifted = y - y.min()
         return y_shifted * (n / y_shifted.sum())  # mean == 1
 
+    @staticmethod
+    def _load_weighted_scheme() -> torch.Tensor:
+        """Load the empirical 1000-bin timestep loss weights from ai-toolkit.
+
+        These are the weights used by ``MeanFlowScheduler.get_weights_for_timesteps``
+        when ``timestep_type="weighted"``.  The table is indexed by discrete
+        diffusion step (0 = noisiest, 999 = cleanest) and has a mean close to 1.
+        """
+        from ltx_trainer.default_weighing_scheme import default_weighing_scheme
+
+        return torch.tensor(default_weighing_scheme, dtype=torch.float32)
+
     def _get_sigma_loss_weights(self, sigmas: torch.Tensor) -> torch.Tensor | None:
-        """Look up per-sample loss weights from precomputed bell table.
+        """Look up per-sample loss weights from precomputed weight table.
 
         Args:
             sigmas: Per-sample sigma values, shape [B], in [0, 1].

@@ -459,12 +459,12 @@ class FlowMatchingConfig(ConfigBaseModel):
         description="Parameters for timestep sampling",
     )
 
-    timestep_loss_weighting: Literal["none", "bell"] = Field(
+    timestep_loss_weighting: Literal["none", "bell", "weighted"] = Field(
         default="none",
         description="Per-timestep loss weighting scheme applied after the token-level mask. "
         "'none': all timesteps weighted equally (default). "
-        "'bell': bell-shaped weights peaking at sigma≈0.5, matching ai-toolkit's 'weighted' "
-        "timestep mode — downweights very high and very low noise levels.",
+        "'bell': bell-shaped weights peaking at sigma≈0.5 (analytic Gaussian curve). "
+        "'weighted': empirical 1000-bin lookup table from ai-toolkit's default_weighing_scheme.",
     )
 
 
