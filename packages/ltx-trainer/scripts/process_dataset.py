@@ -51,6 +51,7 @@ def preprocess_dataset(  # noqa: PLR0913
     with_audio: bool = False,
     load_text_encoder_in_8bit: bool = False,
     with_h_flip: bool = False,
+    frame_sampling: str = "head",
 ) -> None:
     """Run the preprocessing pipeline with the given arguments."""
     # Validate dataset file
@@ -99,6 +100,7 @@ def preprocess_dataset(  # noqa: PLR0913
             with_audio=with_audio,
             audio_output_dir=str(audio_latents_dir) if audio_latents_dir else None,
             with_h_flip=with_h_flip,
+            frame_sampling=frame_sampling,
         )
 
         # Process reference videos if reference_column is provided
@@ -266,6 +268,11 @@ def main(  # noqa: PLR0913
         help="Also encode horizontally flipped videos. Saves flipped latents to latents_h_flip/ alongside "
         "normal latents. Required when using h_flip augmentation during training.",
     ),
+    frame_sampling: str = typer.Option(
+        default="head",
+        help="How to select frames from the video: 'head' (keep first N) or 'uniform' "
+        "(even sampling across full duration).",
+    ),
 ) -> None:
     """Preprocess a video dataset by computing and saving latents and text embeddings.
     The dataset must be a CSV, JSON, or JSONL file with columns for captions and video paths.
@@ -325,6 +332,7 @@ def main(  # noqa: PLR0913
         with_audio=with_audio,
         load_text_encoder_in_8bit=load_text_encoder_in_8bit,
         with_h_flip=with_h_flip,
+        frame_sampling=frame_sampling,
     )
 
 

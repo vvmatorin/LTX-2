@@ -90,6 +90,7 @@ class MediaDataset(Dataset):
         resolution_buckets: list[tuple[int, int, int]],
         reshape_mode: str = "center",
         with_audio: bool = False,
+        frame_sampling: str = "head",
     ) -> None:
         """
         Initialize the media dataset.
@@ -99,6 +100,7 @@ class MediaDataset(Dataset):
             resolution_buckets: List of (frames, height, width) tuples
             reshape_mode: How to crop videos ("center", "random")
             with_audio: Whether to extract audio from video files
+            frame_sampling: How to select frames from the video ("head", "uniform")
         """
         super().__init__()
 
@@ -107,6 +109,7 @@ class MediaDataset(Dataset):
         self.resolution_buckets = resolution_buckets
         self.reshape_mode = reshape_mode
         self.with_audio = with_audio
+        self.frame_sampling = frame_sampling
 
         # First load main media paths
         self.main_media_paths = self._load_video_paths(main_media_column)
@@ -336,11 +339,23 @@ class MediaDataset(Dataset):
         Returns:
             Tuple of (video tensor in [C, F, H, W] format, fps)
         """
-        # Load video frames up to max_target_frames
-        video, fps = read_video(path, max_frames=self.max_target_frames)
+        if self.frame_sampling == "uniform":
+            video, fps = read_video(path, max_frames=None)
+            video_frames = video.shape[0]
 
-        nearest_bucket = self._get_resolution_bucket_for_item(video)
-        target_num_frames, target_height, target_width = nearest_bucket
+            nearest_bucket = self._get_resolution_bucket_for_item(video)
+            target_num_frames, target_height, target_width = nearest_bucket
+
+            if target_num_frames < video_frames:
+                indices = np.linspace(0, video_frames - 1, target_num_frames).round().astype(int)
+                video = video[indices].contiguous()
+                fps = float(np.ceil(target_num_frames * fps / video_frames))
+        else:
+            video, fps = read_video(path, max_frames=self.max_target_frames)
+
+            nearest_bucket = self._get_resolution_bucket_for_item(video)
+            target_num_frames, target_height, target_width = nearest_bucket
+
         frames_resized = self._resize_and_crop(video, target_height, target_width)
 
         # Trim video to target number of frames
@@ -448,6 +463,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     with_audio: bool = False,
     audio_output_dir: str | None = None,
     with_h_flip: bool = False,
+    frame_sampling: str = "head",
 ) -> None:
     """
     Process videos and save latent representations.
@@ -465,6 +481,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         with_audio: Whether to extract and encode audio from videos
         audio_output_dir: Directory to save audio latents (required if with_audio=True)
         with_h_flip: Whether to also encode horizontally flipped videos and save to a sibling directory
+        frame_sampling: How to select frames from the video ("head" or "uniform")
     """
     # Validate audio parameters
     if with_audio and audio_output_dir is None:
@@ -481,6 +498,7 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         resolution_buckets=resolution_buckets,
         reshape_mode=reshape_mode,
         with_audio=with_audio,
+        frame_sampling=frame_sampling,
     )
     logger.info(f"Loaded {len(dataset)} valid media files")
 
@@ -1022,6 +1040,11 @@ def main(  # noqa: PLR0913
         default=False,
         help="Also encode horizontally flipped videos and save to a sibling latents_h_flip/ directory",
     ),
+    frame_sampling: str = typer.Option(
+        default="head",
+        help="How to select frames from the video: 'head' (keep first N) or 'uniform' "
+        "(even sampling across full duration).",
+    ),
 ) -> None:
     """Process videos/images and save latent representations for video generation training.
     This script processes videos and images from metadata files and saves latent representations
@@ -1074,6 +1097,7 @@ def main(  # noqa: PLR0913
         with_audio=with_audio,
         audio_output_dir=audio_output_dir,
         with_h_flip=with_h_flip,
+        frame_sampling=frame_sampling,
     )
 
 
