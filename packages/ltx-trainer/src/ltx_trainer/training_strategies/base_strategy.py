@@ -128,7 +128,7 @@ class TrainingStrategy(ABC):
             audio_pred: Audio prediction from the transformer model (None for video-only)
             inputs: The prepared model inputs containing targets and masks
         Returns:
-            Scalar loss tensor
+            Per-sample loss tensor of shape [B,].
         """
 
     def get_checkpoint_metadata(self) -> dict[str, Any]:

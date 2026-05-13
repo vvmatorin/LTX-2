@@ -7,7 +7,7 @@ from typing import Callable
 
 import torch
 import yaml
-from torch.utils.tensorboard import SummaryWriter
+import trackio
 from accelerate import Accelerator, DistributedType
 from accelerate.utils import set_seed
 from peft import LoraConfig, get_peft_model, get_peft_model_state_dict, set_peft_model_state_dict
@@ -40,6 +40,7 @@ from ltx_trainer.model_loader import load_embeddings_processor, load_text_encode
 from ltx_trainer.model_loader import load_model as load_ltx_model
 from ltx_trainer.progress import TrainingProgress
 from ltx_trainer.quantization import quantize_model
+from ltx_trainer.sigma_tracker import SigmaBucketTracker
 from ltx_trainer.timestep_samplers import SAMPLERS
 from ltx_trainer.training_state import ConfigFingerprint, RngStates, TrainingState
 from ltx_trainer.training_strategies import get_training_strategy
@@ -96,7 +97,8 @@ class LtxvTrainer:
         self._checkpoint_paths: list[Path] = []
         self._training_state_paths: list[Path] = []
         self._training_state_size_warned = False
-        self._init_tensorboard()
+        self._sigma_tracker = SigmaBucketTracker()
+        self._trackio_run: trackio.Run | None = None
 
     def train(  # noqa: PLR0912, PLR0915
         self,
@@ -128,6 +130,9 @@ class LtxvTrainer:
         if training_state is not None and not self._restore_training_state(training_state):
             initial_step = 0
             resuming = False
+
+        resume_run_name = training_state.trackio_run_name if training_state is not None else None
+        self._init_trackio(resume_run_name)
 
         self._init_dataloader()
         data_iter = iter(self._dataloader)
@@ -193,8 +198,8 @@ class LtxvTrainer:
                     if is_optimization_step:
                         self._global_step += 1
 
-                    loss = self._training_step(batch)
-                    self._accelerator.backward(loss)
+                    loss, last_sigmas = self._training_step(batch)
+                    self._accelerator.backward(loss.mean())
 
                     grad_norm = None
                     if self._accelerator.sync_gradients and cfg.optimization.max_grad_norm > 0:
@@ -212,11 +217,11 @@ class LtxvTrainer:
                                     if isinstance(sample_paths, (list, tuple))
                                     else str(sample_paths)
                                 )
-                                if self._tb_writer is not None:
-                                    self._tb_writer.add_text(
-                                        "train/grad_norm_spike",
-                                        f"norm={grad_norm.item():.3f} | [{path_str}]",
-                                        global_step=self._global_step,
+                                if self._trackio_run is not None:
+                                    trackio.alert(
+                                        title="Grad norm spike",
+                                        text=f"norm={grad_norm.item():.3f} at step {self._global_step} | [{path_str}]",
+                                        level=trackio.AlertLevel.WARN,
                                     )
 
                     self._optimizer.step()
@@ -239,6 +244,8 @@ class LtxvTrainer:
                         self._transformer.eval()
                         try:
                             sampled_videos_paths = self._sample_videos(progress)
+                            if sampled_videos_paths and IS_MAIN_PROCESS:
+                                self._log_validation_samples(sampled_videos_paths, cfg.validation.prompts)
                         finally:
                             self._transformer.train()
                     # Save checkpoint if needed
@@ -261,7 +268,7 @@ class LtxvTrainer:
                     # Update progress and log metrics
                     current_lr = self._optimizer.param_groups[0]["lr"]
                     step_time = (time.time() - step_start_time) * cfg.optimization.gradient_accumulation_steps
-                    step_loss = loss.detach().item()
+                    step_loss = loss.detach().mean().item()
 
                     progress.update_training(
                         loss=step_loss,
@@ -270,15 +277,19 @@ class LtxvTrainer:
                         advance=is_optimization_step,
                     )
 
-                    # Log metrics to TensorBoard (only on main process and optimization steps)
                     if IS_MAIN_PROCESS and is_optimization_step:
+                        sigma_list = last_sigmas.cpu().tolist() if last_sigmas is not None else []
+                        loss_list = loss.detach().cpu().tolist() if sigma_list else []
+                        self._sigma_tracker.update(sigma_list, loss_list)
                         metrics = {
                             "train/global_step": self._global_step,
                             "train/loss": step_loss,
                             "train/learning_rate": current_lr,
+                            "train/step_time": step_time,
                         }
                         if grad_norm is not None:
                             metrics["train/grad_norm"] = grad_norm.item()
+                        metrics.update(self._sigma_tracker.get_metrics())
                         self._log_metrics(metrics)
 
                     # Fallback logging when progress bars are disabled
@@ -331,7 +342,6 @@ class LtxvTrainer:
             if cfg.hub.push_to_hub:
                 push_to_hub(saved_path, sampled_videos_paths, self._config)
 
-            # Log final stats to TensorBoard
             self._log_metrics(
                 {
                     "stats/total_time_minutes": stats.total_time_seconds / 60,
@@ -340,25 +350,28 @@ class LtxvTrainer:
                     "stats/peak_gpu_memory_gb": stats.peak_gpu_memory_gb,
                 }
             )
-            if self._tb_writer is not None:
-                self._tb_writer.close()
+            if self._trackio_run is not None:
+                self._trackio_run.finish()
+                self._trackio_run = None
 
         self._accelerator.wait_for_everyone()
         self._accelerator.end_training()
 
         return saved_path, stats
 
-    def _training_step(self, batch: dict[str, dict[str, Tensor]]) -> Tensor:
-        """Perform a single training step using the configured strategy."""
-        # Apply embedding connectors to transform pre-computed text embeddings
+    def _training_step(self, batch: dict[str, dict[str, Tensor]]) -> tuple[Tensor, Tensor | None]:
+        """Perform a single training step using the configured strategy.
+
+        Returns:
+            Tuple of (loss, sigmas) where both are per-sample tensors of shape [B,].
+            Call loss.mean() for the backward pass; pass both to sigma_tracker as-is.
+        """
         conditions = batch["conditions"]
 
         if "video_prompt_embeds" in conditions:
-            # New format: separate video/audio features from precompute()
             video_features = conditions["video_prompt_embeds"]
             audio_features = conditions.get("audio_prompt_embeds")
         else:
-            # Legacy format: single prompt_embeds tensor — duplicate for both modalities
             video_features = conditions["prompt_embeds"]
             audio_features = conditions["prompt_embeds"]
 
@@ -372,23 +385,18 @@ class LtxvTrainer:
         conditions["audio_prompt_embeds"] = audio_embeds
         conditions["prompt_attention_mask"] = attention_mask
 
-        # Use strategy to prepare training inputs (returns ModelInputs with Modality objects)
         model_inputs = self._training_strategy.prepare_training_inputs(batch, self._timestep_sampler)
-
-        # Attach per-sample sigma loss weights if bell weighting is configured
         model_inputs.sigma_loss_weights = self._get_sigma_loss_weights(model_inputs.video.sigma)
 
-        # Run transformer forward pass with Modality-based interface
         video_pred, audio_pred = self._transformer(
             video=model_inputs.video,
             audio=model_inputs.audio,
             perturbations=None,
         )
 
-        # Use strategy to compute loss
         loss = self._training_strategy.compute_loss(video_pred, audio_pred, model_inputs)
 
-        return loss
+        return loss, model_inputs.video.sigma.detach()
 
     @free_gpu_memory_context(after=True)
     def _load_text_encoder_and_cache_embeddings(self) -> list[CachedPromptEmbeddings] | None:
@@ -1206,6 +1214,7 @@ class LtxvTrainer:
             ),
             lr_scheduler_state_dict=self._lr_scheduler.state_dict() if self._lr_scheduler is not None else None,
             optimizer_state_dict=optimizer_state,
+            trackio_run_name=self._trackio_run.name if self._trackio_run is not None else None,
         )
 
         state_path = save_dir / f"training_state_step_{self._global_step:05d}.pt"
@@ -1271,18 +1280,37 @@ class LtxvTrainer:
 
         logger.info(f"💾 Training configuration saved to: {config_path.relative_to(self._config.output_dir)}")
 
-    def _init_tensorboard(self) -> None:
-        """Initialize TensorBoard SummaryWriter."""
-        if not self._config.tensorboard.enabled or not IS_MAIN_PROCESS:
-            self._tb_writer = None
+    def _init_trackio(self, resume_run_name: str | None = None) -> None:
+        """Initialize Trackio experiment tracking."""
+        if not self._config.trackio.enabled or not IS_MAIN_PROCESS:
+            self._trackio_run = None
             return
 
-        log_dir = Path(self._config.output_dir) / "tensorboard"
-        self._tb_writer = SummaryWriter(log_dir=str(log_dir))
+        init_kwargs: dict = {
+            "project": self._config.trackio.project,
+            "name": resume_run_name or Path(self._config.output_dir).name,
+            "config": self._config.model_dump(),
+        }
+        if self._config.trackio.space_id is not None:
+            init_kwargs["space_id"] = self._config.trackio.space_id
+        if resume_run_name is not None:
+            init_kwargs["resume"] = "allow"
+
+        self._trackio_run = trackio.init(**init_kwargs)
 
     def _log_metrics(self, metrics: dict[str, float]) -> None:
-        """Log metrics to TensorBoard."""
-        if self._tb_writer is not None:
-            for key, value in metrics.items():
-                self._tb_writer.add_scalar(key, value, global_step=self._global_step)
-            self._tb_writer.flush()
+        """Log metrics to Trackio."""
+        if self._trackio_run is not None:
+            self._trackio_run.log(metrics, step=self._global_step)
+
+    def _log_validation_samples(self, sample_paths: list[Path], prompts: list[str]) -> None:
+        """Log validation videos/images to Trackio."""
+        if not self._config.trackio.log_validation_videos or self._trackio_run is None:
+            return
+
+        for path, prompt in zip(sample_paths, prompts):
+            if path.suffix == ".png":
+                media = trackio.Image(str(path))
+            else:
+                media = trackio.Video(str(path))
+            self._trackio_run.log({f"validation/{prompt[:50]}": media}, step=self._global_step)

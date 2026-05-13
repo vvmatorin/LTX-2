@@ -288,7 +288,7 @@ class PrecomputedDataset(Dataset):
         first_key = next(iter(self.sample_files.keys()))
         return len(self.sample_files[first_key])
 
-    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, index: int) -> dict[str, Any]:
         # Decide whether to use horizontally flipped latents (50% chance)
         use_h_flip = self.h_flip_latents_path is not None and torch.rand(1).item() < 0.5
 

@@ -5,7 +5,9 @@ using the new ltx-core components (VideoLatentTools, AudioLatentTools, LatentSta
 
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
+from io import BytesIO
 
+import av
 import torch
 from einops import rearrange
 from torch import Tensor
@@ -40,6 +42,7 @@ if TYPE_CHECKING:
     from ltx_core.text_encoders.gemma.embeddings_processor import EmbeddingsProcessor
 
 VIDEO_SCALE_FACTORS = SpatioTemporalScaleFactors.default()
+DEFAULT_IMAGE_CRF = 33
 
 
 @dataclass
@@ -155,7 +158,8 @@ class ValidationSampler:
         self._video_patchifier = VideoLatentPatchifier(patch_size=1)
         self._audio_patchifier = AudioPatchifier(patch_size=1)
 
-    # Note: Use @torch.no_grad() instead of @torch.inference_mode() to avoid FSDP inplace update errors after validation
+    # Note: Use @torch.no_grad() instead of @torch.inference_mode() to avoid
+    # FSDP inplace update errors after validation
     @torch.no_grad()
     def generate(
         self,
@@ -429,7 +433,7 @@ class ValidationSampler:
             # Center crop
             h_start = (resize_height - target_height) // 2
             w_start = (resize_width - target_width) // 2
-            ref_video = ref_video[:, :, h_start : h_start + target_height, w_start : w_start + target_width]
+            ref_video = ref_video[:, :, h_start: h_start + target_height, w_start: w_start + target_width]
 
         # Convert to [B, C, F, H, W] and trim to valid frame count (k*8 + 1)
         ref_video = rearrange(ref_video, "f c h w -> 1 c f h w")
@@ -821,21 +825,47 @@ class ValidationSampler:
         # Concatenate along width dimension
         return torch.cat([left_video, right_video], dim=3)
 
-    def _encode_conditioning_image(
-        self,
+    @staticmethod
+    def _preprocess_conditioning_image(
         image: Tensor,
         target_height: int,
         target_width: int,
-        device: torch.device,
+        crf: int = DEFAULT_IMAGE_CRF,
     ) -> Tensor:
-        """Encode a conditioning image to latent space.
-        The image is resized to cover the target dimensions while preserving aspect ratio,
-        then center-cropped to exactly match the target size.
+        """Preprocess a conditioning image: apply H.264 CRF compression, resize, and center-crop.
+        The CRF round-trip matches the inference pipeline (ltx-pipelines) to simulate
+        video codec artifacts the model was trained on.
+        Args:
+            image: Image tensor [C, H, W] in [0, 1]
+            target_height: Target height in pixels (must be divisible by 32)
+            target_width: Target width in pixels (must be divisible by 32)
+            crf: H.264 CRF quality (0=lossless, 33=default matching inference pipeline)
+        Returns:
+            Preprocessed image tensor [1, C, 1, H, W] in [-1, 1]
         """
-        # image is [C, H, W] in [0, 1]  # noqa: ERA001
-        current_height, current_width = image.shape[1:]
+        # Apply H.264 CRF compression round-trip
+        if crf > 0:
+            image = image.permute(1, 2, 0).clamp(0, 1).mul_(255.0).to(torch.uint8).cpu().numpy()
+            h, w = image.shape[0] // 2 * 2, image.shape[1] // 2 * 2
 
-        # Resize maintaining aspect ratio (cover target, then center crop)
+            image = image[:h, :w]
+            with BytesIO() as buffer:
+                with av.open(buffer, "w", format="mp4") as container:
+                    stream = container.add_stream("libx264", rate=1, options={"crf": str(crf), "preset": "veryfast"})
+                    stream.height, stream.width = h, w
+                    frame = av.VideoFrame.from_ndarray(image, format="rgb24").reformat(format="yuv420p")
+                    container.mux(stream.encode(frame))
+                    container.mux(stream.encode())
+
+                buffer.seek(0)
+                with av.open(buffer) as container:
+                    stream = next(s for s in container.streams if s.type == "video")
+                    decoded = next(container.decode(stream)).to_ndarray(format="rgb24")
+
+                image = torch.from_numpy(decoded).float().div_(255.0).permute(2, 0, 1)
+
+        # Resize maintaining aspect ratio and center-crop
+        current_height, current_width = image.shape[1:]
         if current_height != target_height or current_width != target_width:
             aspect_ratio = current_width / current_height
             target_aspect_ratio = target_width / target_height
@@ -857,15 +887,27 @@ class ValidationSampler:
             # Center crop to target dimensions
             h_start = (resize_height - target_height) // 2
             w_start = (resize_width - target_width) // 2
-            image = image[:, :, h_start : h_start + target_height, w_start : w_start + target_width]
+            image = image[:, :, h_start: h_start + target_height, w_start: w_start + target_width]
         else:
             image = rearrange(image, "c h w -> 1 c h w")
 
         # Add frame dimension and convert to [-1, 1]
         image = rearrange(image, "b c h w -> b c 1 h w")
-        image = (image * 2.0 - 1.0).to(device=device, dtype=torch.float32)
+        image = image * 2.0 - 1.0
 
-        # Encode
+        return image
+
+    def _encode_conditioning_image(
+        self,
+        image: Tensor,
+        target_height: int,
+        target_width: int,
+        device: torch.device,
+    ) -> Tensor:
+        """Preprocess and encode a conditioning image to latent space."""
+        image = self._preprocess_conditioning_image(image, target_height, target_width)
+        image = image.to(device=device, dtype=torch.float32)
+
         self._vae_encoder.to(device)
         with torch.autocast(device_type=str(device).split(":")[0], dtype=torch.bfloat16):
             encoded = self._vae_encoder(image)

@@ -21,7 +21,7 @@ training_strategy:
   with_audio: true
   audio_latents_dir: audio_latents
   h_flip: true
-  first_frame_conditioning_noise: 0.05
+  first_frame_conditioning_noise: 0.0
   temporal_boundary_loss_weight: 1.2
   temporal_boundary_frames: 3
 optimization:
@@ -80,7 +80,10 @@ flow_matching:
 hub:
   push_to_hub: false
   hub_model_id: null
-tensorboard:
+trackio:
   enabled: true
+  project: "ltx-2-trainer"
+  space_id: null
+  log_validation_videos: false
 seed: 42
 output_dir: /path/to/outputs

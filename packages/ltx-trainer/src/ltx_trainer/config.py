@@ -437,12 +437,28 @@ class HubConfig(ConfigBaseModel):
         return self
 
 
-class TensorboardConfig(ConfigBaseModel):
-    """Configuration for TensorBoard logging"""
+class TrackioConfig(ConfigBaseModel):
+    """Configuration for Trackio experiment tracking"""
 
     enabled: bool = Field(
-        default=True,
-        description="Whether to enable TensorBoard logging",
+        default=False,
+        description="Whether to enable Trackio experiment tracking",
+    )
+
+    project: str = Field(
+        default="ltx-2-trainer",
+        description="Trackio project name",
+    )
+
+    space_id: str | None = Field(
+        default=None,
+        description="Optional HuggingFace Space ID for remote dashboard (e.g. 'username/space-name'). "
+        "When None, metrics are logged locally only.",
+    )
+
+    log_validation_videos: bool = Field(
+        default=False,
+        description="Whether to log validation videos/images to Trackio",
     )
 
 
@@ -485,7 +501,7 @@ class LtxTrainerConfig(ConfigBaseModel):
     checkpoints: CheckpointsConfig = Field(default_factory=CheckpointsConfig)
     hub: HubConfig = Field(default_factory=HubConfig)
     flow_matching: FlowMatchingConfig = Field(default_factory=FlowMatchingConfig)
-    tensorboard: TensorboardConfig = Field(default_factory=TensorboardConfig)
+    trackio: TrackioConfig = Field(default_factory=TrackioConfig)
 
     # General configuration
     seed: int = Field(

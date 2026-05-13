@@ -340,7 +340,7 @@ class TextToVideoStrategy(TrainingStrategy):
         inputs: ModelInputs,
     ) -> Tensor:
         """Compute masked MSE loss for video and optionally audio."""
-        # Video loss: normalize per-sample over (seq, channels), then reduce to scalar
+        # Video loss: normalize per-sample over (seq, channels) → [B,]
         video_loss = (video_pred - inputs.video_targets).pow(2)
         video_loss_mask = inputs.video_loss_mask.unsqueeze(-1).float()
         video_loss = video_loss.mul(video_loss_mask).mean(dim=[-2, -1])
@@ -350,13 +350,11 @@ class TextToVideoStrategy(TrainingStrategy):
         if inputs.sigma_loss_weights is not None:
             video_loss = video_loss * inputs.sigma_loss_weights
 
-        video_loss = video_loss.mean()
-
-        # If no audio, return video loss only
+        # If no audio, return per-sample video loss [B,]
         if not self.config.with_audio or audio_pred is None or inputs.audio_targets is None:
             return video_loss
 
-        # Audio loss with masking (video-only samples contribute zero audio loss).
+        # Audio loss per-sample [B,], zeroed for video-only samples.
         audio_loss_mask = inputs.audio_loss_mask.unsqueeze(-1).float()
         audio_loss = (audio_pred - inputs.audio_targets).pow(2)
         audio_loss = audio_loss.mul(audio_loss_mask).mean(dim=[-2, -1])
@@ -365,10 +363,10 @@ class TextToVideoStrategy(TrainingStrategy):
             audio_loss = audio_loss * inputs.sigma_loss_weights
 
         mask_mean = audio_loss_mask.mean(dim=[-2, -1])
-        has_audio = mask_mean > 0
-        if has_audio.any():
-            audio_loss = (audio_loss[has_audio] / mask_mean[has_audio]).mean()
-        else:
-            audio_loss = audio_loss.sum() * 0.0  # zero but graph-connected for DDP safety
+        audio_loss = torch.where(
+            mask_mean > 0,
+            audio_loss / mask_mean.clamp(min=1e-8),
+            audio_loss * 0.0,
+        )
 
         return video_loss + 0.2 * audio_loss

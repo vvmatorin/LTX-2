@@ -18,7 +18,7 @@ class _BasicTransformerBlock1D(torch.nn.Module):
         dim: int,
         heads: int,
         dim_head: int,
-        rope_type: LTXRopeType = LTXRopeType.INTERLEAVED,
+        rope_type: LTXRopeType = LTXRopeType.SPLIT,
         apply_gated_attention: bool = False,
     ):
         super().__init__()
@@ -99,7 +99,7 @@ class Embeddings1DConnector(torch.nn.Module):
         positional_embedding_max_pos: list[int] | None = None,
         causal_temporal_positioning: bool = False,
         num_learnable_registers: int | None = 128,
-        rope_type: LTXRopeType = LTXRopeType.INTERLEAVED,
+        rope_type: LTXRopeType = LTXRopeType.SPLIT,
         double_precision_rope: bool = False,
         apply_gated_attention: bool = False,
     ):
@@ -204,7 +204,7 @@ class Embeddings1DConnectorConfigurator(ModelConfigurator[Embeddings1DConnector]
     @classmethod
     def from_config(cls: type[Embeddings1DConnector], config: dict) -> Embeddings1DConnector:
         transformer_config = config.get("transformer", {})
-        rope_type = LTXRopeType(transformer_config.get("rope_type", "interleaved"))
+        rope_type = LTXRopeType(transformer_config.get("rope_type", "split"))
         double_precision_rope = transformer_config.get("frequencies_precision", False) == "float64"
         pe_max_pos = transformer_config.get("connector_positional_embedding_max_pos", [1])
 
@@ -231,7 +231,7 @@ class AudioEmbeddings1DConnectorConfigurator(ModelConfigurator[Embeddings1DConne
     @classmethod
     def from_config(cls: type[Embeddings1DConnector], config: dict) -> Embeddings1DConnector:
         transformer_config = config.get("transformer", {})
-        rope_type = LTXRopeType(transformer_config.get("rope_type", "interleaved"))
+        rope_type = LTXRopeType(transformer_config.get("rope_type", "split"))
         double_precision_rope = transformer_config.get("frequencies_precision", False) == "float64"
         pe_max_pos = transformer_config.get("connector_positional_embedding_max_pos", [1])
 
