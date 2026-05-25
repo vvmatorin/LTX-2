@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import type { TrainingConfig } from "@/lib/types";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import type { TrainingConfig, ProcessingJob } from "@/lib/types";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useRuns } from "@/hooks/useRuns";
 import { useSettings } from "@/hooks/useSettings";
+import { apiFetch } from "@/lib/api";
 import { TrainingConfigForm } from "@/components/TrainingConfigForm";
 import {
   Card,
@@ -101,7 +103,30 @@ function buildDefaultConfig(
   };
 }
 
+function extractTrainingConfig(
+  jobConfig: Record<string, unknown>,
+): { config: TrainingConfig; gpuMode: "single" | "ddp"; gpuIds: string; datasetName: string } {
+  const {
+    configPath: _cp,
+    preprocessedDataRoot: _pdr,
+    gpuMode,
+    gpuIds,
+    datasetName,
+    ...rest
+  } = jobConfig;
+
+  return {
+    config: rest as unknown as TrainingConfig,
+    gpuMode: (gpuMode as "single" | "ddp") || "single",
+    gpuIds: (gpuIds as string) || "0",
+    datasetName: (datasetName as string) || "",
+  };
+}
+
 export default function TrainingPage() {
+  const searchParams = useSearchParams();
+  const fromJobId = searchParams.get("fromJob");
+
   const { settings } = useSettings();
   const [config, setConfig] = useState<TrainingConfig | null>(null);
   const [selectedDataset, setSelectedDataset] = useState<string>("");
@@ -111,8 +136,25 @@ export default function TrainingPage() {
 
   const { datasets } = useDatasets();
   const { createRun, isCreating } = useRuns();
+  const appliedFromJob = useRef<string | null>(null);
 
   useEffect(() => {
+    if (fromJobId && appliedFromJob.current !== fromJobId) {
+      appliedFromJob.current = fromJobId;
+      apiFetch<ProcessingJob>(`/api/jobs/${fromJobId}`).then((job) => {
+        if (job.type === "training") {
+          const restored = extractTrainingConfig(job.config);
+          setConfig(restored.config);
+          setGpuMode(restored.gpuMode);
+          setGpuIds(restored.gpuIds);
+          if (restored.datasetName) setSelectedDataset(restored.datasetName);
+        }
+      }).catch((err) => {
+        console.error("Failed to load job config:", err);
+      });
+      return;
+    }
+
     if (settings && !config) {
       setConfig(
         buildDefaultConfig(
@@ -122,7 +164,7 @@ export default function TrainingPage() {
         ),
       );
     }
-  }, [settings, config]);
+  }, [settings, config, fromJobId]);
 
   if (!config) {
     return (

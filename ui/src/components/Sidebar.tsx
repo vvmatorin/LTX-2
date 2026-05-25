@@ -9,6 +9,7 @@ import {
   Play,
   Settings,
   Layers,
+  type LucideIcon,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -16,6 +17,33 @@ const NAV_ITEMS = [
   { href: "/training", label: "Training", icon: GraduationCap },
   { href: "/runs", label: "Runs", icon: Play },
 ] as const;
+
+function NavLink({
+  href,
+  icon: Icon,
+  label,
+  active,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[0.95rem] font-medium transition-all duration-200",
+        active
+          ? "ring-glow bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_1px_0_oklch(1_0_0_/_0.12),0_6px_18px_oklch(0.07_0.03_258_/_0.55)]"
+          : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {label}
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -33,39 +61,24 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 px-1 py-4">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname.startsWith(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[0.95rem] font-medium transition-all duration-200",
-                active
-                  ? "ring-glow bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_1px_0_oklch(1_0_0_/_0.12),0_6px_18px_oklch(0.07_0.03_258_/_0.55)]"
-                  : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {label}
-            </Link>
-          );
-        })}
+        {NAV_ITEMS.map(({ href, label, icon }) => (
+          <NavLink
+            key={href}
+            href={href}
+            icon={icon}
+            label={label}
+            active={pathname.startsWith(href)}
+          />
+        ))}
       </nav>
 
       <div className="border-t border-sidebar-border px-1 py-3">
-        <Link
+        <NavLink
           href="/settings"
-          className={cn(
-            "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[0.95rem] font-medium transition-all duration-200",
-            pathname.startsWith("/settings")
-              ? "ring-glow bg-sidebar-accent text-sidebar-accent-foreground shadow-[inset_0_1px_0_oklch(1_0_0_/_0.12),0_6px_18px_oklch(0.07_0.03_258_/_0.55)]"
-              : "text-sidebar-foreground/82 hover:bg-sidebar-accent/65 hover:text-sidebar-foreground",
-          )}
-        >
-          <Settings className="h-4 w-4 shrink-0" />
-          Settings
-        </Link>
+          icon={Settings}
+          label="Settings"
+          active={pathname.startsWith("/settings")}
+        />
       </div>
     </aside>
   );

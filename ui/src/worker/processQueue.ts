@@ -26,7 +26,7 @@ export async function processQueue(): Promise<void> {
       .prepare("SELECT * FROM jobs WHERE id = ?")
       .get(running.id) as JobRow;
 
-    if (job.pid) {
+    if (job.pid && job.pid > 0) {
       let processAlive = true;
       try {
         process.kill(job.pid, 0);

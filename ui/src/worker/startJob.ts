@@ -209,7 +209,7 @@ function handleMergeJob(
   }
 
   fs.closeSync(logFd);
-  return 0;
+  return -1;
 }
 
 function hardLinkRecursive(src: string, dest: string) {

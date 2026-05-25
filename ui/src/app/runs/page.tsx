@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useJobs } from "@/hooks/useJobs";
 import { useTensorboard } from "@/hooks/useTensorboard";
 import { formatDuration } from "@/lib/format";
@@ -24,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export default function RunsPage() {
+  const router = useRouter();
   const { jobs, stopJob } = useJobs();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tbFullscreen, setTbFullscreen] = useState(false);
@@ -54,8 +56,6 @@ export default function RunsPage() {
   const elapsedDisplay = activeJob?.startedAt
     ? formatDuration(activeJob.startedAt)
     : null;
-
-  const isTrainingJob = activeJob?.type === "training";
 
   return (
     <div className="space-y-6 p-3 md:p-4">
@@ -90,7 +90,7 @@ export default function RunsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {isTrainingJob && (
+                {activeJob.type === "training" && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -165,7 +165,7 @@ export default function RunsPage() {
 
       <Separator />
 
-      <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+      <Collapsible open={historyOpen}>
         <button
           type="button"
           className="flex w-full items-center justify-between py-1"
@@ -182,7 +182,10 @@ export default function RunsPage() {
           />
         </button>
         <CollapsibleContent className="pt-3">
-          <JobQueueList jobs={historyJobs} />
+          <JobQueueList
+            jobs={historyJobs}
+            onReuse={(job) => router.push(`/training?fromJob=${job.id}`)}
+          />
         </CollapsibleContent>
       </Collapsible>
 

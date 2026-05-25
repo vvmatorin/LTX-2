@@ -41,17 +41,11 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     try {
-      await saveSettings({
-        modelPath: local.modelPath,
-        textEncoderPath: local.textEncoderPath,
-        outputDir: local.outputDir,
-        datasetDir: local.datasetDir,
-        scriptsDir: local.scriptsDir,
-      });
+      await saveSettings(local);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      /* react-query surfaces the error via isError */
+      // react-query surfaces the error via isError
     }
   };
 

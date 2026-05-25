@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
-import { X, GraduationCap, Layers, Package, AlertTriangle } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
+import { X, RotateCcw, GraduationCap, Layers, Package, AlertTriangle } from "lucide-react";
 
 interface Props {
   jobs: ProcessingJob[];
   onCancel?: (id: number) => void;
+  onReuse?: (job: ProcessingJob) => void;
 }
 
 const TYPE_ICONS = {
@@ -21,15 +23,15 @@ const TYPE_ICONS = {
   training: GraduationCap,
 } as const;
 
-export function JobQueueList({ jobs, onCancel }: Props) {
+export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
   const { alive } = useWorkerStatus();
   const hasQueuedJobs = jobs.some((j) => j.status === "queued" || j.status === "running");
 
   if (jobs.length === 0) {
     return (
-      <div className="surface-neo-inset rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+      <EmptyState className="surface-neo-inset rounded-2xl">
         No jobs in queue
-      </div>
+      </EmptyState>
     );
   }
 
@@ -97,6 +99,20 @@ export function JobQueueList({ jobs, onCancel }: Props) {
                 </span>
               </div>
             )}
+
+            {onReuse &&
+              job.type === "training" &&
+              ["completed", "failed", "cancelled"].includes(job.status) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                  title="Reuse config"
+                  onClick={() => onReuse(job)}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              )}
 
             {(job.status === "queued" || job.status === "running") &&
               onCancel && (

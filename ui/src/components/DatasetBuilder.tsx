@@ -8,13 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 import { Package, Plus, CheckCircle2, Square, CheckSquare, Trash2, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 
 interface Props {
   completedJobs: ProcessingJob[];
   datasets: TrainingDataset[];
-  onBuildDataset: (name: string, buckets: DatasetBucket[]) => void;
+  onBuildDataset: (name: string, buckets: DatasetBucket[]) => void | Promise<void>;
   onDeleteDataset: (id: number) => void;
   onRefresh: () => void;
   isRefreshing?: boolean;
@@ -33,7 +34,7 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
     });
   };
 
-  const handleBuild = () => {
+  const handleBuild = async () => {
     if (!datasetName.trim()) return;
     const buckets: DatasetBucket[] = completedJobs
       .filter((j) => selectedJobIds.has(j.id))
@@ -62,9 +63,13 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           hasHFlip: cfg.hFlip || false,
         };
       });
-    onBuildDataset(datasetName, buckets);
-    setDatasetName("");
-    setSelectedJobIds(new Set());
+    try {
+      await onBuildDataset(datasetName, buckets);
+      setDatasetName("");
+      setSelectedJobIds(new Set());
+    } catch {
+      // Error is surfaced by the parent via buildError state
+    }
   };
 
   return (
@@ -86,9 +91,7 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           </Button>
         </div>
         {datasets.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-            No training datasets yet.
-          </div>
+          <EmptyState className="p-4">No training datasets yet.</EmptyState>
         ) : (
           <>
           {datasets.map((ds) => {
@@ -173,9 +176,9 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           </div>
 
           {completedJobs.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            <EmptyState>
               No completed preprocessing jobs. Process some folders first.
-            </div>
+            </EmptyState>
           ) : (
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground uppercase tracking-wider">

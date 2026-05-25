@@ -4,6 +4,7 @@ import type { ProcessingJob } from "@/lib/types";
 import { RESOLUTION_OPTIONS, FRAME_COUNT_OPTIONS } from "@/lib/types";
 import { JOB_STATUS } from "@/lib/jobStatus";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -35,9 +36,9 @@ export function ProcessingMatrix({ jobs, folderId }: Props) {
 
   if (jobMap.size === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+      <EmptyState>
         No processing jobs for this folder yet. Configure and queue above.
-      </div>
+      </EmptyState>
     );
   }
 

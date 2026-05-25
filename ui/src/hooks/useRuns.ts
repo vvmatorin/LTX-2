@@ -1,26 +1,19 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiPost } from "@/lib/api";
 
 export function useRuns() {
   const queryClient = useQueryClient();
 
   const createRun = useMutation({
-    mutationFn: async (run: {
+    mutationFn: (run: {
       name: string;
       config: Record<string, unknown>;
       gpuMode: string;
       gpuIds: string;
       datasetName: string;
-    }) => {
-      const res = await fetch("/api/runs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(run),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
+    }) => apiPost("/api/runs", run),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },

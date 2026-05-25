@@ -13,9 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Section({
@@ -31,7 +30,7 @@ export function Section({
 
   return (
     <Card>
-      <Collapsible open={open} onOpenChange={setOpen}>
+      <Collapsible open={open}>
         <CardHeader
           className="cursor-pointer select-none py-3"
           onClick={() => setOpen(!open)}
@@ -74,7 +73,7 @@ export function NumberField({
         type="number"
         step={step}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(Number(e.target.value) || 0)}
         className={cn("text-xs", mono && "font-mono")}
       />
     </div>
@@ -154,51 +153,6 @@ export function SwitchField({
   );
 }
 
-export function TagInput({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (v: string[]) => void;
-}) {
-  const [input, setInput] = useState("");
-
-  const addTag = () => {
-    const tag = input.trim();
-    if (tag && !value.includes(tag)) {
-      onChange([...value, tag]);
-    }
-    setInput("");
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-1.5">
-        {value.map((tag) => (
-          <Badge key={tag} variant="secondary" className="gap-1 text-xs font-mono">
-            {tag}
-            <button type="button" onClick={() => onChange(value.filter((t) => t !== tag))}>
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        ))}
-      </div>
-      <Input
-        placeholder="Type and press Enter"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            addTag();
-          }
-        }}
-        className="text-xs font-mono"
-      />
-    </div>
-  );
-}
-
 export function ListInput({
   value,
   onChange,
@@ -238,7 +192,7 @@ export function VideoDimsField({
             value={value[i]}
             onChange={(e) => {
               const next = [...value] as [number, number, number];
-              next[i] = Number(e.target.value);
+              next[i] = Number(e.target.value) || 0;
               onChange(next);
             }}
             className="text-xs"

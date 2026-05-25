@@ -2,38 +2,27 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { SourceFolder } from "@/lib/types";
+import { apiFetch, apiPost, apiDelete } from "@/lib/api";
 
 export function useFolders() {
   const queryClient = useQueryClient();
 
   const query = useQuery<SourceFolder[]>({
     queryKey: ["folders"],
-    queryFn: async () => {
-      const res = await fetch("/api/folders");
-      return res.json();
-    },
+    queryFn: () => apiFetch<SourceFolder[]>("/api/folders"),
   });
 
   const addFolder = useMutation({
-    mutationFn: async (folderPath: string) => {
-      const res = await fetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: folderPath }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
+    mutationFn: (folderPath: string) =>
+      apiPost<SourceFolder>("/api/folders", { path: folderPath }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
   });
 
   const removeFolder = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/folders?id=${id}`, { method: "DELETE" });
-      return res.json();
-    },
+    mutationFn: (id: number) =>
+      apiDelete<{ ok: boolean }>(`/api/folders?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
@@ -41,7 +30,6 @@ export function useFolders() {
 
   return {
     folders: query.data || [],
-    isLoading: query.isLoading,
     addFolder: addFolder.mutateAsync,
     removeFolder: removeFolder.mutateAsync,
   };

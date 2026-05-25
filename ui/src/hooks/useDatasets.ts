@@ -2,17 +2,14 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TrainingDataset } from "@/lib/types";
-import { parseApiError } from "@/lib/utils";
+import { apiFetch, apiPost, apiDelete } from "@/lib/api";
 
 export function useDatasets() {
   const queryClient = useQueryClient();
 
   const query = useQuery<TrainingDataset[]>({
     queryKey: ["datasets"],
-    queryFn: async () => {
-      const res = await fetch("/api/datasets");
-      return res.json();
-    },
+    queryFn: () => apiFetch<TrainingDataset[]>("/api/datasets"),
     refetchInterval: (query) => {
       const data = query.state.data;
       const hasActiveBuilds = data?.some(
@@ -23,15 +20,8 @@ export function useDatasets() {
   });
 
   const createDataset = useMutation({
-    mutationFn: async (dataset: { name: string; path: string; buckets: unknown[] }) => {
-      const res = await fetch("/api/datasets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dataset),
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      return res.json();
-    },
+    mutationFn: (dataset: { name: string; path: string; buckets: unknown[] }) =>
+      apiPost<TrainingDataset>("/api/datasets", dataset),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -39,11 +29,8 @@ export function useDatasets() {
   });
 
   const deleteDataset = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/datasets?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      return res.json();
-    },
+    mutationFn: (id: number) =>
+      apiDelete<{ ok: boolean }>(`/api/datasets?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     },
@@ -51,10 +38,8 @@ export function useDatasets() {
 
   return {
     datasets: query.data || [],
-    isLoading: query.isLoading,
     createDataset: createDataset.mutateAsync,
     deleteDataset: deleteDataset.mutateAsync,
     refreshDatasets: query.refetch,
-    isRefreshing: query.isFetching,
   };
 }

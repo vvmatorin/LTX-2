@@ -2,40 +2,35 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ProcessingJob } from "@/lib/types";
-import { parseApiError } from "@/lib/utils";
+import { apiFetch, apiPost } from "@/lib/api";
+
+const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
 export function useJobs() {
   const queryClient = useQueryClient();
 
   const query = useQuery<ProcessingJob[]>({
     queryKey: ["jobs"],
-    queryFn: async () => {
-      const res = await fetch("/api/jobs");
-      return res.json();
+    queryFn: () => apiFetch<ProcessingJob[]>("/api/jobs"),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || data.length === 0) return false;
+      const allTerminal = data.every((j) => TERMINAL_STATUSES.has(j.status));
+      return allTerminal ? false : 1500;
     },
-    refetchInterval: 2000,
   });
 
   const createJob = useMutation({
-    mutationFn: async (job: { type: string; name: string; config: Record<string, unknown> }) => {
-      const res = await fetch("/api/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(job),
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      return res.json();
-    },
+    mutationFn: (job: { type: string; name: string; config: Record<string, unknown> }) =>
+      apiPost<ProcessingJob>("/api/jobs", job),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 
   const stopJob = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/jobs/${id}/stop`, { method: "POST" });
-      return res.json();
-    },
+    mutationFn: (id: number) =>
+      apiPost<{ ok: boolean }>(`/api/jobs/${id}/stop`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
@@ -43,10 +38,8 @@ export function useJobs() {
 
   return {
     jobs: query.data || [],
-    isLoading: query.isLoading,
     createJob: createJob.mutateAsync,
     stopJob: stopJob.mutateAsync,
     refreshJobs: query.refetch,
-    isRefreshingJobs: query.isFetching,
   };
 }

@@ -14,6 +14,7 @@ import { DatasetBuilder } from "@/components/DatasetBuilder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/EmptyState";
 import { FolderPlus } from "lucide-react";
 
 export default function DatasetsPage() {
@@ -93,6 +94,7 @@ export default function DatasetsPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setBuildError(msg);
+      throw err;
     }
   };
 
@@ -138,9 +140,9 @@ export default function DatasetsPage() {
               />
             ))}
             {folders.length === 0 && (
-              <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              <EmptyState className="p-8">
                 No folders added yet. Enter a path above to get started.
-              </div>
+              </EmptyState>
             )}
           </div>
         </TabsContent>
@@ -155,9 +157,9 @@ export default function DatasetsPage() {
               <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} />
             </>
           ) : (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            <EmptyState className="p-8">
               Select a folder from the Source Folders tab to configure processing.
-            </div>
+            </EmptyState>
           )}
         </TabsContent>
 

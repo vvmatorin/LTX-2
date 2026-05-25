@@ -243,8 +243,6 @@ class LtxvTrainer:
                         self._transformer.eval()
                         try:
                             sampled_videos_paths = self._sample_videos(progress)
-                            if sampled_videos_paths and IS_MAIN_PROCESS:
-                                self._log_validation_samples(sampled_videos_paths, cfg.validation.prompts)
                         finally:
                             self._transformer.train()
                     # Save checkpoint if needed
@@ -1295,11 +1293,3 @@ class LtxvTrainer:
             for key, value in metrics.items():
                 self._tb_writer.add_scalar(key, value, global_step=self._global_step)
             self._tb_writer.flush()
-
-    def _log_validation_samples(self, sample_paths: list[Path], prompts: list[str]) -> None:
-        """Log validation images to TensorBoard."""
-        if not self._config.tensorboard.log_validation_videos or self._tb_writer is None:
-            return
-
-        for path in sample_paths:
-            logger.info(f"Validation sample saved: {path}")
