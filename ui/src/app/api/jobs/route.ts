@@ -38,9 +38,12 @@ export async function GET(req: Request) {
   const status = searchParams.get("status");
   const type = searchParams.get("type");
 
+  type JobStatus = typeof jobs.status.enumValues[number];
+  type JobType = typeof jobs.type.enumValues[number];
+
   const conditions: SQL[] = [];
-  if (status) conditions.push(eq(jobs.status, status));
-  if (type) conditions.push(eq(jobs.type, type));
+  if (status) conditions.push(eq(jobs.status, status as JobStatus));
+  if (type) conditions.push(eq(jobs.type, type as JobType));
 
   let query = db.select().from(jobs).orderBy(desc(jobs.createdAt));
   if (conditions.length > 0) {
