@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useJobs } from "@/hooks/useJobs";
 import { useSSELog } from "@/hooks/useSSELog";
+import { useTensorboard } from "@/hooks/useTensorboard";
 import { formatDuration } from "@/lib/format";
 import { parseLossPoints } from "@/lib/logParsing";
 import { LogViewer } from "@/components/LogViewer";
@@ -19,12 +20,15 @@ import {
   ChevronDown,
   Clock,
   Activity,
+  Maximize2,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function RunsPage() {
   const { jobs, stopJob } = useJobs();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [tbFullscreen, setTbFullscreen] = useState(false);
 
   const activeJob = jobs.find((j) => j.status === "running") ?? null;
   const queuedJobs = useMemo(
@@ -41,6 +45,7 @@ export default function RunsPage() {
 
   const { lines: logLines } = useSSELog(activeJob?.id ?? null);
   const lossPoints = useMemo(() => parseLossPoints(logLines), [logLines]);
+  const tb = useTensorboard(activeJob);
 
   const handleStop = async (id: number) => {
     try {
@@ -53,6 +58,8 @@ export default function RunsPage() {
   const elapsedDisplay = activeJob?.startedAt
     ? formatDuration(activeJob.startedAt)
     : null;
+
+  const isTrainingJob = activeJob?.type === "training";
 
   return (
     <div className="space-y-6 p-3 md:p-4">
@@ -126,6 +133,16 @@ export default function RunsPage() {
               </div>
             )}
 
+            {isTrainingJob && (
+              <TensorBoardPanel
+                running={tb.running}
+                port={tb.port}
+                error={tb.error}
+                fullscreen={tbFullscreen}
+                onToggleFullscreen={() => setTbFullscreen(!tbFullscreen)}
+              />
+            )}
+
             <LogViewer lines={logLines} />
           </CardContent>
         </Card>
@@ -176,6 +193,78 @@ export default function RunsPage() {
           <JobQueueList jobs={historyJobs} />
         </CollapsibleContent>
       </Collapsible>
+
+      {tbFullscreen && (
+        <div className="fixed inset-0 z-50 bg-background flex flex-col">
+          <div className="flex items-center justify-between px-4 py-2 border-b">
+            <span className="text-sm font-medium">TensorBoard</span>
+            <Button variant="ghost" size="sm" onClick={() => setTbFullscreen(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <iframe
+            src={`http://localhost:${tb.port}`}
+            className="flex-1 w-full border-0"
+            title="TensorBoard Fullscreen"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TensorBoardPanel({
+  running,
+  port,
+  error,
+  fullscreen,
+  onToggleFullscreen,
+}: {
+  running: boolean;
+  port: number;
+  error: string | null;
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
+}) {
+  if (fullscreen) return null;
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              "h-2 w-2 rounded-full",
+              running ? "bg-green-500" : "bg-yellow-500 animate-pulse",
+            )}
+          />
+          <span className="text-xs font-medium">
+            {running ? "TensorBoard" : "TensorBoard starting..."}
+          </span>
+        </div>
+        {running && (
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onToggleFullscreen}>
+            <Maximize2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+      {error && (
+        <div className="px-3 py-2 text-xs text-destructive bg-destructive/5">
+          {error}
+        </div>
+      )}
+      {running ? (
+        <iframe
+          src={`http://localhost:${port}`}
+          className="w-full border-0"
+          style={{ height: "520px" }}
+          title="TensorBoard"
+        />
+      ) : (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
     </div>
   );
 }

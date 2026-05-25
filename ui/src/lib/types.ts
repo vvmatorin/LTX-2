@@ -114,12 +114,6 @@ export interface TrainingConfig {
     keepLastN: number;
     precision: string;
   };
-  trackio: {
-    enabled: boolean;
-    project: string;
-    spaceId: string;
-    logValidationVideos: boolean;
-  };
   outputDir: string;
   seed: number;
 }
@@ -130,7 +124,6 @@ export interface AppSettings {
   outputDir: string;
   datasetDir: string;
   scriptsDir: string;
-  hfLoggedIn: boolean;
 }
 
 export type ResolutionOption = 512 | 768 | 1024 | 1280 | 1440;

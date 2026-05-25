@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useSettings } from "@/hooks/useSettings";
-import { useHuggingFaceAuth } from "@/hooks/useHuggingFaceAuth";
-import { HuggingFaceAuthDialog } from "@/components/HuggingFaceAuthDialog";
 import {
   Card,
   CardContent,
@@ -14,8 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Save, LogIn, LogOut } from "lucide-react";
+import { Save } from "lucide-react";
 import type { AppSettings } from "@/lib/types";
 
 function buildLocalSettings(api: AppSettings | undefined): AppSettings {
@@ -25,19 +22,16 @@ function buildLocalSettings(api: AppSettings | undefined): AppSettings {
     outputDir: api?.outputDir || "",
     datasetDir: api?.datasetDir || "",
     scriptsDir: api?.scriptsDir || "",
-    hfLoggedIn: Boolean(api?.hfLoggedIn),
   };
 }
 
 export default function SettingsPage() {
   const { settings: apiSettings, saveSettings, isSaving } = useSettings();
-  const hf = useHuggingFaceAuth();
 
   const [local, setLocal] = useState<AppSettings>(() =>
     buildLocalSettings(apiSettings),
   );
   const [saved, setSaved] = useState(false);
-  const [hfDialogOpen, setHfDialogOpen] = useState(false);
 
   useEffect(() => {
     if (apiSettings) {
@@ -141,46 +135,6 @@ export default function SettingsPage() {
               className="font-mono text-xs"
             />
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">HuggingFace</CardTitle>
-          <CardDescription>
-            Authentication for trackio logging
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <Badge variant={hf.loggedIn ? "default" : "secondary"}>
-              {hf.loggedIn
-                ? `Logged in${hf.username ? ` as ${hf.username}` : ""}`
-                : "Not logged in"}
-            </Badge>
-            {hf.loggedIn ? (
-              <Button variant="outline" size="sm" onClick={hf.logout}>
-                <LogOut className="mr-1.5 h-3.5 w-3.5" /> Sign Out
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setHfDialogOpen(true)}
-              >
-                <LogIn className="mr-1.5 h-3.5 w-3.5" /> Sign In
-              </Button>
-            )}
-          </div>
-
-          <HuggingFaceAuthDialog
-            open={hfDialogOpen}
-            onOpenChange={setHfDialogOpen}
-            loading={hf.loading}
-            error={hf.error}
-            onLogin={hf.login}
-            onClearError={hf.clearError}
-          />
         </CardContent>
       </Card>
 

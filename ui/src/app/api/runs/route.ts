@@ -140,12 +140,9 @@ function buildYamlConfig(
       timestep_sampling_params: {},
       timestep_loss_weighting: "weighted",
     },
-    trackio: uiConfig.trackio?.enabled ? {
+    tensorboard: {
       enabled: true,
-      project: uiConfig.trackio?.project || "ltx-training",
-      space_id: uiConfig.trackio?.spaceId || null,
-      log_validation_videos: uiConfig.trackio?.logValidationVideos ?? true,
-    } : undefined,
+    },
     hub: {
       push_to_hub: false,
       hub_model_id: null,

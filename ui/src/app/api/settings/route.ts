@@ -8,7 +8,6 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   outputDir: "",
   datasetDir: "",
   scriptsDir: "",
-  hfLoggedIn: "false",
 };
 
 export async function GET() {

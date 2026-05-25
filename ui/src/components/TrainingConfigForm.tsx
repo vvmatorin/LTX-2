@@ -8,7 +8,6 @@ import {
   OptimizationSection,
   ValidationSection,
   CheckpointsSection,
-  LoggingSection,
   GeneralSection,
 } from "./training/sections";
 
@@ -39,7 +38,6 @@ export function TrainingConfigForm({ config, onChange }: Props) {
       <OptimizationSection config={config} update={update} />
       <ValidationSection config={config} update={update} />
       <CheckpointsSection config={config} update={update} />
-      <LoggingSection config={config} update={update} />
       <GeneralSection config={config} onChange={onChange} />
     </div>
   );

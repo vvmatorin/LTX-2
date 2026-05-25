@@ -302,38 +302,6 @@ export function CheckpointsSection({ config, update }: SectionProps) {
   );
 }
 
-export function LoggingSection({ config, update }: SectionProps) {
-  return (
-    <Section title="Logging (TrackIO)" defaultOpen={false}>
-      <SwitchField
-        label="Enable TrackIO Logging"
-        checked={config.trackio.enabled}
-        onChange={(v) => update("trackio", { enabled: v })}
-      />
-      {config.trackio.enabled && (
-        <div className="grid grid-cols-2 gap-4">
-          <TextField
-            label="Project"
-            value={config.trackio.project}
-            onChange={(v) => update("trackio", { project: v })}
-          />
-          <TextField
-            label="Space ID"
-            value={config.trackio.spaceId}
-            onChange={(v) => update("trackio", { spaceId: v })}
-          />
-          <div className="col-span-2">
-            <SwitchField
-              label="Log Validation Videos"
-              checked={config.trackio.logValidationVideos}
-              onChange={(v) => update("trackio", { logValidationVideos: v })}
-            />
-          </div>
-        </div>
-      )}
-    </Section>
-  );
-}
 
 export function GeneralSection({ config, onChange }: GeneralSectionProps) {
   return (

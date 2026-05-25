@@ -5,9 +5,7 @@ import type { TrainingConfig } from "@/lib/types";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useRuns } from "@/hooks/useRuns";
 import { useSettings } from "@/hooks/useSettings";
-import { useHuggingFaceAuth } from "@/hooks/useHuggingFaceAuth";
 import { TrainingConfigForm } from "@/components/TrainingConfigForm";
-import { HuggingFaceAuthDialog } from "@/components/HuggingFaceAuthDialog";
 import {
   Card,
   CardContent,
@@ -24,8 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Play, LogIn, LogOut, Loader2 } from "lucide-react";
+import { Play, Loader2 } from "lucide-react";
 
 function buildDefaultConfig(
   modelPath: string,
@@ -93,12 +90,6 @@ function buildDefaultConfig(
       keepLastN: -1,
       precision: "bfloat16",
     },
-    trackio: {
-      enabled: false,
-      project: "ltx-training",
-      spaceId: "",
-      logValidationVideos: true,
-    },
     outputDir: outputDir || "/tmp/ltx-training",
     seed: 42,
   };
@@ -111,9 +102,7 @@ export default function TrainingPage() {
   const [gpuMode, setGpuMode] = useState<"single" | "ddp">("single");
   const [gpuIds, setGpuIds] = useState("0");
   const [startError, setStartError] = useState<string | null>(null);
-  const [hfDialogOpen, setHfDialogOpen] = useState(false);
 
-  const hf = useHuggingFaceAuth();
   const { datasets } = useDatasets();
   const { createRun, isCreating } = useRuns();
 
@@ -299,43 +288,6 @@ export default function TrainingPage() {
                 </Badge>
               </div>
 
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">HuggingFace</span>
-                <Badge
-                  variant={hf.loggedIn ? "default" : "secondary"}
-                  className="text-[10px]"
-                >
-                  {hf.loggedIn
-                    ? hf.username || "Logged in"
-                    : "Not logged in"}
-                </Badge>
-              </div>
-              {hf.loggedIn ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs"
-                  onClick={hf.logout}
-                >
-                  <LogOut className="mr-1.5 h-3 w-3" />
-                  Sign out
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs"
-                  onClick={() => setHfDialogOpen(true)}
-                >
-                  <LogIn className="mr-1.5 h-3 w-3" />
-                  Sign in to HuggingFace
-                </Button>
-              )}
-
-              <Separator />
-
               {startError && (
                 <p className="text-xs text-destructive">{startError}</p>
               )}
@@ -358,15 +310,6 @@ export default function TrainingPage() {
           </Card>
         </div>
       </div>
-
-      <HuggingFaceAuthDialog
-        open={hfDialogOpen}
-        onOpenChange={setHfDialogOpen}
-        loading={hf.loading}
-        error={hf.error}
-        onLogin={hf.login}
-        onClearError={hf.clearError}
-      />
     </div>
   );
 }
