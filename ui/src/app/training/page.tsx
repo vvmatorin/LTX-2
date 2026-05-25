@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import type { TrainingConfig, ProcessingJob } from "@/lib/types";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useRuns } from "@/hooks/useRuns";
@@ -139,6 +139,7 @@ function extractTrainingConfig(
 }
 
 export default function TrainingPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const fromJobId = searchParams.get("fromJob");
 
@@ -207,6 +208,7 @@ export default function TrainingPage() {
         gpuIds,
         datasetName: activeDataset,
       });
+      router.push("/runs");
     } catch (err) {
       setStartError(err instanceof Error ? err.message : String(err));
     }
