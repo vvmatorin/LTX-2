@@ -103,8 +103,23 @@ function buildDefaultConfig(
   };
 }
 
+function deepMerge<T extends Record<string, unknown>>(defaults: T, partial: Record<string, unknown>): T {
+  const result = { ...defaults };
+  for (const key of Object.keys(partial)) {
+    const val = partial[key];
+    const def = (defaults as Record<string, unknown>)[key];
+    if (val != null && typeof val === "object" && !Array.isArray(val) && def != null && typeof def === "object" && !Array.isArray(def)) {
+      (result as Record<string, unknown>)[key] = deepMerge(def as Record<string, unknown>, val as Record<string, unknown>);
+    } else if (val !== undefined) {
+      (result as Record<string, unknown>)[key] = val;
+    }
+  }
+  return result;
+}
+
 function extractTrainingConfig(
   jobConfig: Record<string, unknown>,
+  defaults: TrainingConfig,
 ): { config: TrainingConfig; gpuMode: "single" | "ddp"; gpuIds: string; datasetName: string } {
   const {
     configPath: _cp,
@@ -116,7 +131,7 @@ function extractTrainingConfig(
   } = jobConfig;
 
   return {
-    config: rest as unknown as TrainingConfig,
+    config: deepMerge(defaults as unknown as Record<string, unknown>, rest) as unknown as TrainingConfig,
     gpuMode: (gpuMode as "single" | "ddp") || "single",
     gpuIds: (gpuIds as string) || "0",
     datasetName: (datasetName as string) || "",
