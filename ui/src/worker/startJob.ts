@@ -24,7 +24,13 @@ export async function startJob(job: JobRow): Promise<number> {
   let command: string;
   let args: string[];
   let cwd: string;
-  const env = { ...process.env };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PYTHONUNBUFFERED: "1",
+    TERM: "xterm-256color",
+    FORCE_COLOR: "1",
+    COLORTERM: "truecolor",
+  };
 
   const scriptsDir =
     getSettingSync("scriptsDir") || (config.scriptsDir as string) || "";

@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { useJobs } from "@/hooks/useJobs";
-import { useSSELog } from "@/hooks/useSSELog";
 import { useTensorboard } from "@/hooks/useTensorboard";
 import { formatDuration } from "@/lib/format";
 import { LogViewer } from "@/components/LogViewer";
@@ -41,7 +40,6 @@ export default function RunsPage() {
     [jobs],
   );
 
-  const { lines: logLines } = useSSELog(activeJob?.id ?? null);
   const tb = useTensorboard(activeJob);
 
   const handleStop = async (id: number) => {
@@ -126,7 +124,7 @@ export default function RunsPage() {
               />
             )}
 
-            <LogViewer lines={logLines} />
+            <LogViewer jobId={activeJob.id} />
           </CardContent>
         </Card>
       ) : (

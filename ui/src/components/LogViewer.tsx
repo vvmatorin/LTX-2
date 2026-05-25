@@ -1,84 +1,130 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { ArrowDown } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Terminal } from "@xterm/xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 
 interface Props {
-  lines: string[];
+  jobId: number | null;
   className?: string;
 }
 
-export function LogViewer({ lines, className }: Props) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [autoScroll, setAutoScroll] = useState(true);
+const TERMINAL_THEME = {
+  background: "#0d1220",
+  foreground: "#e2e8f0",
+  cursor: "#64748b",
+  cursorAccent: "#0d1220",
+  selectionBackground: "#334155",
+  black: "#1e293b",
+  red: "#f87171",
+  green: "#34d399",
+  yellow: "#fbbf24",
+  blue: "#60a5fa",
+  magenta: "#c084fc",
+  cyan: "#22d3ee",
+  white: "#e2e8f0",
+  brightBlack: "#475569",
+  brightRed: "#fca5a5",
+  brightGreen: "#6ee7b7",
+  brightYellow: "#fcd34d",
+  brightBlue: "#93c5fd",
+  brightMagenta: "#d8b4fe",
+  brightCyan: "#67e8f9",
+  brightWhite: "#f8fafc",
+} as const;
+
+export function LogViewer({ jobId, className }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [lines, autoScroll]);
+    const host = containerRef.current;
+    if (!host) return;
 
-  const handleScroll = () => {
-    if (!scrollRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    const atBottom = scrollHeight - scrollTop - clientHeight < 40;
-    setAutoScroll(atBottom);
-  };
+    const term = new Terminal({
+      convertEol: true,
+      cursorBlink: false,
+      disableStdin: true,
+      fontFamily:
+        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontSize: 12,
+      lineHeight: 1.25,
+      scrollback: 10_000,
+      theme: TERMINAL_THEME,
+      allowProposedApi: true,
+    });
+
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(host);
+
+    const safeFit = () => {
+      try {
+        fit.fit();
+      } catch {
+        /* container not visible yet */
+      }
+    };
+
+    requestAnimationFrame(safeFit);
+
+    const resizeObserver = new ResizeObserver(safeFit);
+    resizeObserver.observe(host);
+
+    termRef.current = term;
+    fitRef.current = fit;
+
+    return () => {
+      resizeObserver.disconnect();
+      term.dispose();
+      termRef.current = null;
+      fitRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+
+    term.clear();
+    if (!jobId) return;
+
+    const es = new EventSource(`/api/jobs/${jobId}/logs?mode=sse`);
+
+    es.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data === "__DONE__") {
+        es.close();
+        return;
+      }
+      if (typeof data === "string" && data.length > 0) {
+        term.write(data);
+      }
+    };
+
+    es.onerror = () => es.close();
+
+    return () => es.close();
+  }, [jobId]);
 
   return (
-    <div className={cn("surface-neo relative flex flex-col rounded-2xl border border-border bg-background", className)}>
+    <div
+      className={cn(
+        "surface-neo flex flex-col overflow-hidden rounded-2xl border border-border",
+        className,
+      )}
+    >
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
         <span className="text-xs font-medium text-muted-foreground">Output</span>
-        <span className="text-[10px] text-muted-foreground tabular-nums">
-          {lines.length} lines
-        </span>
       </div>
       <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-auto p-3 font-mono text-[11px] leading-5"
-        style={{ minHeight: 200, maxHeight: 400 }}
-      >
-        {lines.map((line, i) => (
-          <div
-            key={i}
-            className={cn(
-              "whitespace-pre-wrap break-all",
-              line.includes("Error") || line.includes("error") || line.includes("CUDA out of memory")
-                ? "text-red-400"
-                : line.includes("Done") || line.includes("100.0%")
-                  ? "text-emerald-400"
-                  : "text-muted-foreground",
-            )}
-          >
-            {line}
-          </div>
-        ))}
-        {lines.length === 0 && (
-          <div className="flex h-32 items-center justify-center text-muted-foreground">
-            Waiting for output...
-          </div>
-        )}
-      </div>
-      {!autoScroll && (
-        <Button
-          size="sm"
-          variant="secondary"
-          className="absolute bottom-4 right-4 z-10 h-7 gap-1 text-xs shadow-lg"
-          onClick={() => {
-            setAutoScroll(true);
-            scrollRef.current?.scrollTo({
-              top: scrollRef.current.scrollHeight,
-              behavior: "smooth",
-            });
-          }}
-        >
-          <ArrowDown className="h-3 w-3" />
-          Scroll to bottom
-        </Button>
-      )}
+        ref={containerRef}
+        className="flex-1 p-2"
+        style={{ background: TERMINAL_THEME.background, height: 360 }}
+      />
     </div>
   );
 }
