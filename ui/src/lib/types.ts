@@ -24,7 +24,7 @@ export interface ProcessingJob {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
-  /** Present only for completed preprocess jobs: whether the output dataset.json exists on disk */
+  /** Present only for completed preprocess jobs: whether the .precomputed output directory exists on disk */
   outputExists?: boolean;
 }
 

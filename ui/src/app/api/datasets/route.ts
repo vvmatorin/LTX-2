@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { trainingDatasets } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import fs from "fs";
+import path from "path";
 
 export async function GET() {
   const rows = db.select().from(trainingDatasets).all();
@@ -10,7 +11,7 @@ export async function GET() {
     rows.map((r) => ({
       ...r,
       buckets: JSON.parse(r.buckets),
-      pathExists: r.path ? fs.existsSync(r.path) : false,
+      pathExists: r.path ? fs.existsSync(path.join(r.path, ".precomputed")) : false,
     })),
   );
 }

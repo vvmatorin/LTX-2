@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TrainingDataset } from "@/lib/types";
+import { parseApiError } from "@/lib/utils";
 
 export function useDatasets() {
   const queryClient = useQueryClient();
@@ -21,7 +22,7 @@ export function useDatasets() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dataset),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await parseApiError(res));
       return res.json();
     },
     onSuccess: () => {
@@ -32,7 +33,7 @@ export function useDatasets() {
   const buildDataset = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/datasets/${id}/build`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await parseApiError(res));
       return res.json();
     },
     onSuccess: () => {
@@ -43,7 +44,7 @@ export function useDatasets() {
   const deleteDataset = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/datasets?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error(await parseApiError(res));
       return res.json();
     },
     onSuccess: () => {

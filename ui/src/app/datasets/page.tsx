@@ -18,13 +18,14 @@ import { FolderPlus } from "lucide-react";
 
 export default function DatasetsPage() {
   const { folders, addFolder, removeFolder } = useFolders();
-  const { jobs, createJob, refreshJobs, isRefreshingJobs } = useJobs();
-  const { datasets, createDataset, buildDataset, deleteDataset, refreshDatasets, isRefreshing: isRefreshingDatasets } = useDatasets();
+  const { jobs, createJob, refreshJobs } = useJobs();
+  const { datasets, createDataset, buildDataset, deleteDataset, refreshDatasets } = useDatasets();
   const { settings } = useSettings();
 
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [newFolderPath, setNewFolderPath] = useState("");
   const [buildError, setBuildError] = useState<string | null>(null);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   const effectiveFolderId = selectedFolderId ?? folders[0]?.id ?? null;
   const selectedFolder = folders.find((f) => f.id === effectiveFolderId) ?? null;
@@ -33,11 +34,14 @@ export default function DatasetsPage() {
     [jobs],
   );
 
-  const handleRefresh = () => {
-    refreshDatasets();
-    refreshJobs();
+  const handleRefresh = async () => {
+    setIsManualRefreshing(true);
+    try {
+      await Promise.all([refreshDatasets(), refreshJobs()]);
+    } finally {
+      setIsManualRefreshing(false);
+    }
   };
-  const isRefreshing = isRefreshingDatasets || isRefreshingJobs;
 
   const handleAddFolder = async () => {
     if (!newFolderPath.trim()) return;
@@ -170,7 +174,7 @@ export default function DatasetsPage() {
             onBuildDataset={handleBuildDataset}
             onDeleteDataset={async (id) => { try { await deleteDataset(id); } catch (err) { console.error(err); } }}
             onRefresh={handleRefresh}
-            isRefreshing={isRefreshing}
+            isRefreshing={isManualRefreshing}
           />
         </TabsContent>
       </Tabs>
