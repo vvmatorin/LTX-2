@@ -28,7 +28,7 @@ if ! command -v uv &>/dev/null; then
 fi
 
 info "Syncing Python dependencies (uv sync)..."
-uv sync --frozen
+uv sync
 
 # Activate the uv-managed venv so child processes (tensorboard, accelerate,
 # python3 for train.py / process_dataset.py) resolve to project dependencies
