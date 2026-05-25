@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "concurrently --kill-others-on-fail -n next,worker -c cyan,yellow \"next start --port ${PORT:-8675}\" \"tsx src/worker/index.ts\"",
     "start:next": "next start --port ${PORT:-8675}",
-    "build_and_start": "npm install && npm run setup && npm run build && npm run start",
+    "build_and_start": "npm install && npm run build && npm run start",
     "lint": "next lint",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "worker": "tsx src/worker/index.ts",
