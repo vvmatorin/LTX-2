@@ -11,13 +11,16 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: false,
   },
   devIndicators: false,
-  // Reverse-proxy TensorBoard through the Next.js server so the UI works
-  // through a single forwarded port (e.g. SSH tunnel, Cloud Run, etc).
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     return [
       {
-        source: `${TB_PATH_PREFIX}/:path*`,
-        destination: `http://${TB_HOST}:${TB_PORT}${TB_PATH_PREFIX}/:path*`,
+        source: `${TB_PATH_PREFIX}/`,
+        destination: `http://${TB_HOST}:${TB_PORT}${TB_PATH_PREFIX}/`,
+      },
+      {
+        source: `${TB_PATH_PREFIX}/:path+`,
+        destination: `http://${TB_HOST}:${TB_PORT}${TB_PATH_PREFIX}/:path+`,
       },
     ];
   },
