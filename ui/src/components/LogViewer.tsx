@@ -115,8 +115,10 @@ export function LogViewer({ jobId, className }: Props) {
   }, [jobId]);
 
   return (
-    <div className={cn('surface-neo border-border overflow-hidden rounded-2xl border', className)}>
-      <div ref={containerRef} className="p-2" style={{ background: TERMINAL_THEME.background, height: 360 }} />
-    </div>
+    <div
+      ref={containerRef}
+      className={cn('p-2', className)}
+      style={{ background: TERMINAL_THEME.background, height: 360 }}
+    />
   );
 }

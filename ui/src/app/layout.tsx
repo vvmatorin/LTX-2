@@ -1,12 +1,27 @@
 import type { Metadata } from 'next';
-import { Geist_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { Providers } from '@/components/Providers';
 import { Sidebar } from '@/components/Sidebar';
 
-const geistMono = Geist_Mono({
+const googleSans = localFont({
+  variable: '--font-google-sans',
+  display: 'swap',
+  src: [
+    { path: '../../public/fonts/GoogleSans-Regular.woff2', weight: '400', style: 'normal' },
+    { path: '../../public/fonts/GoogleSans-Medium.woff2', weight: '500', style: 'normal' },
+    { path: '../../public/fonts/GoogleSans-SemiBold.woff2', weight: '600', style: 'normal' },
+    { path: '../../public/fonts/GoogleSans-Bold.woff2', weight: '700', style: 'normal' },
+  ],
+});
+
+const geistMono = localFont({
   variable: '--font-geist-mono',
-  subsets: ['latin'],
+  display: 'swap',
+  src: [
+    { path: '../../public/fonts/GeistMono-Regular.woff2', weight: '400', style: 'normal' },
+    { path: '../../public/fonts/GeistMono-Medium.woff2', weight: '500', style: 'normal' },
+  ],
 });
 
 export const metadata: Metadata = {
@@ -20,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistMono.variable} dark h-full antialiased`}>
+    <html lang="en" className={`${googleSans.variable} ${geistMono.variable} dark h-full antialiased`}>
       <body className="bg-background text-foreground h-full">
         <Providers>
           <div className="relative flex h-full overflow-hidden">
