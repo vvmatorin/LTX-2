@@ -268,6 +268,11 @@ export function ValidationSection({ config, update }: SectionProps) {
           checked={config.validation.generateAudio}
           onChange={(v) => update("validation", { generateAudio: v })}
         />
+        <SwitchField
+          label="Skip Initial Validation"
+          checked={config.validation.skipInitialValidation}
+          onChange={(v) => update("validation", { skipInitialValidation: v })}
+        />
       </div>
     </Section>
   );

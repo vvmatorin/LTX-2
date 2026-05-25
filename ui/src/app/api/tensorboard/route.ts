@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getSetting, setSetting } from "@/lib/settings";
 import { spawn } from "child_process";
 
-const TB_PORT = 6006;
+// Defaults must match run.sh and ui/next.config.ts.
+const TB_HOST = process.env.TENSORBOARD_HOST || "127.0.0.1";
+const TB_PORT = process.env.TENSORBOARD_PORT || "6006";
+const TB_PATH_PREFIX = process.env.TENSORBOARD_PATH_PREFIX || "/tensorboard";
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -17,6 +20,7 @@ function clearTbState(): void {
   setSetting("tbPid", "");
   setSetting("tbPort", "");
   setSetting("tbLogDir", "");
+  setSetting("tbPathPrefix", "");
 }
 
 function killTbProcess(): void {
@@ -38,6 +42,7 @@ export async function GET() {
   const pidStr = getSetting("tbPid");
   const port = parseInt(getSetting("tbPort") || "0", 10);
   const logDir = getSetting("tbLogDir") || null;
+  const storedPrefix = getSetting("tbPathPrefix") || "";
 
   if (!pidStr || !parseInt(pidStr, 10)) {
     return NextResponse.json({ running: false, port: 0, logDir: null });
@@ -46,6 +51,13 @@ export async function GET() {
   const pid = parseInt(pidStr, 10);
   if (!isProcessAlive(pid)) {
     clearTbState();
+    return NextResponse.json({ running: false, port: 0, logDir: null });
+  }
+
+  // Kill stale TB processes that were spawned without the current path_prefix
+  // (e.g. before the reverse-proxy migration). The hook will respawn a fresh one.
+  if (storedPrefix !== TB_PATH_PREFIX) {
+    killTbProcess();
     return NextResponse.json({ running: false, port: 0, logDir: null });
   }
 
@@ -68,7 +80,13 @@ export async function POST(req: Request) {
   try {
     const child = spawn(
       "tensorboard",
-      ["--logdir", logDir, "--port", String(TB_PORT), "--host", "localhost", "--reload_interval", "5"],
+      [
+        "--logdir", logDir,
+        "--port", String(TB_PORT),
+        "--host", TB_HOST,
+        "--path_prefix", TB_PATH_PREFIX,
+        "--reload_interval", "5",
+      ],
       {
         detached: true,
         stdio: "ignore",
@@ -85,10 +103,11 @@ export async function POST(req: Request) {
     child.unref();
 
     setSetting("tbPid", String(child.pid));
-    setSetting("tbPort", String(TB_PORT));
+    setSetting("tbPort", TB_PORT);
     setSetting("tbLogDir", logDir);
+    setSetting("tbPathPrefix", TB_PATH_PREFIX);
 
-    return NextResponse.json({ running: true, port: TB_PORT, logDir });
+    return NextResponse.json({ running: true, port: parseInt(TB_PORT, 10), logDir });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });

@@ -34,6 +34,7 @@ export interface TrainingDataset {
   path: string;
   buckets: DatasetBucket[];
   pathExists: boolean;
+  buildStatus: "queued" | "running" | null;
   createdAt: string;
 }
 
@@ -98,6 +99,7 @@ export interface TrainingConfig {
     videosPerPrompt: number;
     guidanceScale: number;
     generateAudio: boolean;
+    skipInitialValidation: boolean;
   };
   checkpoints: {
     interval: number;

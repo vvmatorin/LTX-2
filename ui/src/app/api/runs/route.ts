@@ -128,7 +128,7 @@ function buildYamlConfig(
       stg_blocks: [28],
       stg_mode: "stg_av",
       generate_audio: uiConfig.validation?.generateAudio ?? true,
-      skip_initial_validation: false,
+      skip_initial_validation: uiConfig.validation?.skipInitialValidation ?? false,
     },
     checkpoints: {
       interval: uiConfig.checkpoints?.interval ?? 560,

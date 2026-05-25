@@ -2,18 +2,31 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { jobs, trainingDatasets } from "@/db/schema";
 import { nextQueuePosition } from "@/db/queries";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 import type { DatasetBucket } from "@/lib/types";
 
 export async function GET() {
   const rows = db.select().from(trainingDatasets).all();
+
+  const activeBuilds = db
+    .select({ name: jobs.name, status: jobs.status })
+    .from(jobs)
+    .where(inArray(jobs.status, ["queued", "running"]))
+    .all()
+    .filter((j) => j.name.startsWith("Build: "));
+
+  const buildStatusByDataset = new Map(
+    activeBuilds.map((j) => [j.name.slice("Build: ".length), j.status]),
+  );
+
   return NextResponse.json(
     rows.map((r) => ({
       ...r,
       buckets: JSON.parse(r.buckets),
       pathExists: r.path ? fs.existsSync(path.join(r.path, ".precomputed")) : false,
+      buildStatus: buildStatusByDataset.get(r.name) ?? null,
     })),
   );
 }

@@ -80,10 +80,7 @@ flow_matching:
 hub:
   push_to_hub: false
   hub_model_id: null
-trackio:
+tensorboard:
   enabled: true
-  project: "ltx-2-trainer"
-  space_id: null
-  log_validation_videos: false
 seed: 42
 output_dir: /path/to/outputs

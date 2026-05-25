@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Package, Plus, CheckCircle2, Square, CheckSquare, Trash2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Package, Plus, CheckCircle2, Square, CheckSquare, Trash2, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 
 interface Props {
   completedJobs: ProcessingJob[];
@@ -49,9 +49,10 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
         const bucketKeys = cfg.resolutionBuckets
           ? cfg.resolutionBuckets.split(";")
           : [];
+        const folderPath = cfg.outputFolderPath || "";
         return {
-          folderName: j.name.split(" / ")[0] || "unknown",
-          folderPath: cfg.outputFolderPath || "",
+          folderName: folderPath.split("/").filter(Boolean).pop() || "unknown",
+          folderPath,
           jobId: j.id,
           resolution: cfg.resolution || 0,
           frameCount: (cfg.frameCounts || [0])[0],
@@ -89,25 +90,38 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           </div>
         ) : (
           <>
-          {datasets.map((ds) => (
+          {datasets.map((ds) => {
+            const isBuilding = ds.buildStatus === "queued" || ds.buildStatus === "running";
+            const isMissing = !isBuilding && !ds.pathExists;
+            return (
             <Card
               key={ds.id}
               className={cn(
                 "bg-muted/30",
-                !ds.pathExists && "border-destructive/30 bg-destructive/5",
+                isMissing && "border-destructive/30 bg-destructive/5",
+                isBuilding && "border-blue-500/30 bg-blue-500/5",
               )}
             >
               <CardContent className="flex items-center gap-3 p-3">
-                <Package
-                  className={cn(
-                    "h-4 w-4 shrink-0",
-                    ds.pathExists ? "text-emerald-400" : "text-destructive/70",
-                  )}
-                />
+                {isBuilding ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
+                ) : (
+                  <Package
+                    className={cn(
+                      "h-4 w-4 shrink-0",
+                      ds.pathExists ? "text-emerald-400" : "text-destructive/70",
+                    )}
+                  />
+                )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{ds.name}</span>
-                    {!ds.pathExists && (
+                    {isBuilding && (
+                      <span className="text-[10px] text-blue-400">
+                        {ds.buildStatus === "running" ? "building…" : "queued…"}
+                      </span>
+                    )}
+                    {isMissing && (
                       <span className="flex items-center gap-1 text-[10px] text-destructive">
                         <AlertTriangle className="h-3 w-3" />
                         path missing
@@ -130,7 +144,8 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
                 </Button>
               </CardContent>
             </Card>
-          ))}
+          );
+          })}
           </>
         )}
       </div>

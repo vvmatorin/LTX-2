@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail -n next,worker -c cyan,yellow \"next dev\" \"tsx src/worker/index.ts\"",
-    "dev:next": "next dev",
+    "dev": "concurrently --kill-others-on-fail -n next,worker -c cyan,yellow \"next dev --port ${PORT:-8675}\" \"tsx src/worker/index.ts\"",
+    "dev:next": "next dev --port ${PORT:-8675}",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port ${PORT:-8675}",
     "lint": "next lint",
     "worker": "tsx src/worker/index.ts",
     "db:generate": "drizzle-kit generate",

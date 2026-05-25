@@ -13,6 +13,13 @@ export function useDatasets() {
       const res = await fetch("/api/datasets");
       return res.json();
     },
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      const hasActiveBuilds = data?.some(
+        (d) => d.buildStatus === "queued" || d.buildStatus === "running",
+      );
+      return hasActiveBuilds ? 3000 : false;
+    },
   });
 
   const createDataset = useMutation({

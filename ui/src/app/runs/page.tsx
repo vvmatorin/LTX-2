@@ -117,7 +117,6 @@ export default function RunsPage() {
             {isTrainingJob && (
               <TensorBoardPanel
                 running={tb.running}
-                port={tb.port}
                 error={tb.error}
                 fullscreen={tbFullscreen}
                 onToggleFullscreen={() => setTbFullscreen(!tbFullscreen)}
@@ -184,7 +183,7 @@ export default function RunsPage() {
             </Button>
           </div>
           <iframe
-            src={`http://localhost:${tb.port}`}
+            src="/tensorboard/"
             className="flex-1 w-full border-0"
             title="TensorBoard Fullscreen"
           />
@@ -196,13 +195,11 @@ export default function RunsPage() {
 
 function TensorBoardPanel({
   running,
-  port,
   error,
   fullscreen,
   onToggleFullscreen,
 }: {
   running: boolean;
-  port: number;
   error: string | null;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -236,7 +233,7 @@ function TensorBoardPanel({
       )}
       {running ? (
         <iframe
-          src={`http://localhost:${port}`}
+          src="/tensorboard/"
           className="w-full border-0"
           style={{ height: "520px" }}
           title="TensorBoard"

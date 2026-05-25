@@ -216,10 +216,12 @@ class LtxvTrainer:
                                     if isinstance(sample_paths, (list, tuple))
                                     else str(sample_paths)
                                 )
-                                logger.warning(
-                                    f"Grad norm spike: {grad_norm.item():.3f} at step "
-                                    f"{self._global_step} | [{path_str}]"
-                                )
+                                if self._tb_writer is not None:
+                                    self._tb_writer.add_text(
+                                        "train/grad_norm_spike",
+                                        f"norm={grad_norm.item():.3f} | [{path_str}]",
+                                        global_step=self._global_step,
+                                    )
 
                     self._optimizer.step()
                     self._optimizer.zero_grad()

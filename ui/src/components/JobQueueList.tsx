@@ -57,8 +57,10 @@ export function JobQueueList({ jobs, onCancel }: Props) {
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium">
-                  {job.name}
+                <span className="truncate text-sm font-medium font-mono">
+                  {job.type === "preprocess"
+                    ? ((job.config as Record<string, unknown>).outputFolderPath as string | undefined) ?? job.name
+                    : job.name}
                 </span>
                 <Badge
                   variant="outline"

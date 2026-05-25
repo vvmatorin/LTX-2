@@ -84,6 +84,7 @@ function buildDefaultConfig(
       videosPerPrompt: 1,
       guidanceScale: 3.0,
       generateAudio: true,
+      skipInitialValidation: false,
     },
     checkpoints: {
       interval: 560,

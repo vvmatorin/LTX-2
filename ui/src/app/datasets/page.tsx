@@ -68,7 +68,7 @@ export default function DatasetsPage() {
     for (const c of configs) {
       await createJob({
         type: "preprocess",
-        name: `${selectedFolder?.path ?? "?"} / ${c.resolution} / ${c.frameCount === 1 ? "img" : `${c.frameCount}f`}`,
+        name: `${selectedFolder?.path ?? "?"}/_buckets/${c.resolution}_${c.frameCount}`,
         config: {
           folderId: effectiveFolderId,
           resolution: c.resolution,
