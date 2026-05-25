@@ -1,0 +1,81 @@
+import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { sourceFolders } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import fs from "fs";
+import path from "path";
+
+const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png"]);
+const VIDEO_EXTS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm"]);
+
+function scanFolderMeta(folderPath: string): {
+  fileCount: number;
+  mediaType: "images" | "videos" | "mixed";
+  hasDatasetJson: boolean;
+  hasAudioJson: boolean;
+} {
+  if (!fs.existsSync(folderPath)) {
+    return { fileCount: 0, mediaType: "videos", hasDatasetJson: false, hasAudioJson: false };
+  }
+
+  const entries = fs.readdirSync(folderPath);
+  let images = 0;
+  let videos = 0;
+
+  for (const entry of entries) {
+    const ext = path.extname(entry).toLowerCase();
+    if (IMAGE_EXTS.has(ext)) images++;
+    else if (VIDEO_EXTS.has(ext)) videos++;
+  }
+
+  const hasDatasetJson = entries.includes("dataset.json");
+  const hasAudioJson = entries.includes("dataset_audio.json");
+  const mediaType: "images" | "videos" | "mixed" =
+    images > 0 && videos > 0 ? "mixed" : images > 0 ? "images" : "videos";
+
+  return { fileCount: images + videos, mediaType, hasDatasetJson, hasAudioJson };
+}
+
+export async function GET() {
+  const rows = db.select().from(sourceFolders).all();
+  return NextResponse.json(rows);
+}
+
+export async function POST(req: Request) {
+  const body = await req.json();
+  const folderPath: string = body.path;
+
+  if (!folderPath) {
+    return NextResponse.json({ error: "path is required" }, { status: 400 });
+  }
+
+  const parts = folderPath.split("/").filter(Boolean);
+  const name = body.name || parts[parts.length - 1] || "folder";
+
+  const meta = scanFolderMeta(folderPath);
+
+  const result = db
+    .insert(sourceFolders)
+    .values({
+      path: folderPath,
+      name,
+      mediaType: meta.mediaType,
+      fileCount: meta.fileCount,
+      hasDatasetJson: meta.hasDatasetJson,
+      hasAudioJson: meta.hasAudioJson,
+    })
+    .returning()
+    .get();
+
+  return NextResponse.json(result, { status: 201 });
+}
+
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const id = Number(searchParams.get("id"));
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+  db.delete(sourceFolders).where(eq(sourceFolders.id, id)).run();
+  return NextResponse.json({ ok: true });
+}

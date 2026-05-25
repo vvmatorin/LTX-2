@@ -1,0 +1,140 @@
+export interface SourceFolder {
+  id: number;
+  path: string;
+  name: string;
+  mediaType: "images" | "videos" | "mixed";
+  fileCount: number;
+  hasDatasetJson: boolean;
+  hasAudioJson: boolean;
+  createdAt: string;
+}
+
+export interface ProcessingConfig {
+  folderId: number;
+  resolution: number;
+  frameCounts: number[];
+  hFlip: boolean;
+  frameSampling: "uniform" | "head";
+  withAudio: boolean;
+  datasetFilename: string;
+}
+
+export interface ProcessingJob {
+  id: number;
+  type: "preprocess" | "merge" | "training";
+  name: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  config: Record<string, unknown>;
+  queuePosition: number;
+  pid: number | null;
+  logFile: string | null;
+  stopRequested: boolean;
+  progress: number | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  /** Present only for completed preprocess jobs: whether the output dataset.json exists on disk */
+  outputExists?: boolean;
+}
+
+export interface TrainingDataset {
+  id: number;
+  name: string;
+  path: string;
+  buckets: DatasetBucket[];
+  pathExists: boolean;
+  createdAt: string;
+}
+
+export interface DatasetBucket {
+  folderName: string;
+  folderPath: string;
+  jobId: number;
+  resolution: number;
+  frameCount: number;
+  bucketKeys: string[];
+  hasAudio: boolean;
+  hasHFlip: boolean;
+}
+
+export interface TrainingConfig {
+  model: {
+    modelPath: string;
+    textEncoderPath: string;
+    trainingMode: "lora" | "full";
+    loadCheckpoint: string | null;
+  };
+  lora: {
+    rank: number;
+    alpha: number;
+    dropout: number;
+    targetModules: string[];
+  };
+  trainingStrategy: {
+    name: "text_to_video";
+    firstFrameConditioningP: number;
+    withAudio: boolean;
+    audioLatentsDir: string;
+    hFlip: boolean;
+    firstFrameConditioningNoise: number;
+    temporalBoundaryLossWeight: number;
+    temporalBoundaryFrames: number;
+  };
+  optimization: {
+    learningRate: number;
+    steps: number;
+    batchSize: number;
+    gradientAccumulationSteps: number;
+    maxGradNorm: number;
+    optimizerType: string;
+    optimizerParams?: Record<string, unknown>;
+    schedulerType: string;
+    numWarmupSteps: number;
+    enableGradientCheckpointing: boolean;
+  };
+  data?: {
+    preprocessedDataRoot?: string;
+  };
+  validation: {
+    prompts: string[];
+    images: string[];
+    negativePrompt: string;
+    videoDims: [number, number, number];
+    frameRate: number;
+    seed: number;
+    inferenceSteps: number;
+    interval: number;
+    videosPerPrompt: number;
+    guidanceScale: number;
+    generateAudio: boolean;
+  };
+  checkpoints: {
+    interval: number;
+    keepLastN: number;
+    precision: string;
+  };
+  trackio: {
+    enabled: boolean;
+    project: string;
+    spaceId: string;
+    logValidationVideos: boolean;
+  };
+  outputDir: string;
+  seed: number;
+}
+
+export interface AppSettings {
+  modelPath: string;
+  textEncoderPath: string;
+  outputDir: string;
+  datasetDir: string;
+  scriptsDir: string;
+  hfLoggedIn: boolean;
+}
+
+export type ResolutionOption = 512 | 768 | 1024 | 1280 | 1440;
+export type FrameCountOption = 1 | 25 | 49 | 73 | 121 | 145;
+
+export const RESOLUTION_OPTIONS: ResolutionOption[] = [512, 768, 1024, 1280, 1440];
+export const FRAME_COUNT_OPTIONS: FrameCountOption[] = [1, 25, 49, 73, 121, 145];
