@@ -1,4 +1,4 @@
-import { parseApiError } from "./utils";
+import { parseApiError } from './utils';
 
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -6,11 +6,11 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 export function apiPost<T>(url: string, body: unknown): Promise<T> {
   return apiFetch<T>(url, {
-    method: "POST",
+    method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
@@ -18,12 +18,12 @@ export function apiPost<T>(url: string, body: unknown): Promise<T> {
 
 export function apiPut<T>(url: string, body: unknown): Promise<T> {
   return apiFetch<T>(url, {
-    method: "PUT",
+    method: 'PUT',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
 }
 
 export function apiDelete<T>(url: string): Promise<T> {
-  return apiFetch<T>(url, { method: "DELETE" });
+  return apiFetch<T>(url, { method: 'DELETE' });
 }

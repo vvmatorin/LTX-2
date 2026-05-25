@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import type { ProcessingJob, TrainingDataset, DatasetBucket } from "@/lib/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { EmptyState } from "@/components/EmptyState";
-import { cn } from "@/lib/utils";
+import { useState } from 'react';
+import type { ProcessingJob, TrainingDataset, DatasetBucket } from '@/lib/types';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/EmptyState';
+import { cn } from '@/lib/utils';
 import {
   Package,
   Plus,
@@ -20,7 +20,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Loader2,
-} from "lucide-react";
+} from 'lucide-react';
 
 interface Props {
   completedJobs: ProcessingJob[];
@@ -39,11 +39,11 @@ export function DatasetBuilder({
   onRefresh,
   isRefreshing,
 }: Props) {
-  const [datasetName, setDatasetName] = useState("");
+  const [datasetName, setDatasetName] = useState('');
   const [selectedJobIds, setSelectedJobIds] = useState<Set<number>>(new Set());
 
   const toggleJob = (id: number) => {
-    setSelectedJobIds((prev) => {
+    setSelectedJobIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -54,8 +54,8 @@ export function DatasetBuilder({
   const handleBuild = async () => {
     if (!datasetName.trim()) return;
     const buckets: DatasetBucket[] = completedJobs
-      .filter((j) => selectedJobIds.has(j.id))
-      .map((j) => {
+      .filter(j => selectedJobIds.has(j.id))
+      .map(j => {
         const cfg = j.config as {
           folderId?: number;
           outputFolderPath?: string;
@@ -65,10 +65,10 @@ export function DatasetBuilder({
           hFlip?: boolean;
           resolutionBuckets?: string;
         };
-        const bucketKeys = cfg.resolutionBuckets ? cfg.resolutionBuckets.split(";") : [];
-        const folderPath = cfg.outputFolderPath || "";
+        const bucketKeys = cfg.resolutionBuckets ? cfg.resolutionBuckets.split(';') : [];
+        const folderPath = cfg.outputFolderPath || '';
         return {
-          folderName: folderPath.split("/").filter(Boolean).pop() || "unknown",
+          folderName: folderPath.split('/').filter(Boolean).pop() || 'unknown',
           folderPath,
           jobId: j.id,
           resolution: cfg.resolution || 0,
@@ -80,7 +80,7 @@ export function DatasetBuilder({
       });
     try {
       await onBuildDataset(datasetName, buckets);
-      setDatasetName("");
+      setDatasetName('');
       setSelectedJobIds(new Set());
     } catch {
       // Error is surfaced by the parent via buildError state
@@ -91,9 +91,7 @@ export function DatasetBuilder({
     <div className="space-y-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-muted-foreground text-xs tracking-wider uppercase">
-            Existing Training Datasets
-          </Label>
+          <Label className="text-muted-foreground text-xs tracking-wider uppercase">Existing Training Datasets</Label>
           <Button
             size="sm"
             variant="outline"
@@ -101,7 +99,7 @@ export function DatasetBuilder({
             onClick={onRefresh}
             disabled={isRefreshing}
           >
-            <RefreshCw className={cn("h-3 w-3", isRefreshing && "animate-spin")} />
+            <RefreshCw className={cn('h-3 w-3', isRefreshing && 'animate-spin')} />
             Refresh
           </Button>
         </div>
@@ -109,16 +107,16 @@ export function DatasetBuilder({
           <EmptyState className="p-4">No training datasets yet.</EmptyState>
         ) : (
           <>
-            {datasets.map((ds) => {
-              const isBuilding = ds.buildStatus === "queued" || ds.buildStatus === "running";
+            {datasets.map(ds => {
+              const isBuilding = ds.buildStatus === 'queued' || ds.buildStatus === 'running';
               const isMissing = !isBuilding && !ds.pathExists;
               return (
                 <Card
                   key={ds.id}
                   className={cn(
-                    "bg-muted/30",
-                    isMissing && "border-destructive/30 bg-destructive/5",
-                    isBuilding && "border-blue-500/30 bg-blue-500/5",
+                    'bg-muted/30',
+                    isMissing && 'border-destructive/30 bg-destructive/5',
+                    isBuilding && 'border-blue-500/30 bg-blue-500/5',
                   )}
                 >
                   <CardContent className="flex items-center gap-3 p-3">
@@ -126,10 +124,7 @@ export function DatasetBuilder({
                       <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
                     ) : (
                       <Package
-                        className={cn(
-                          "h-4 w-4 shrink-0",
-                          ds.pathExists ? "text-emerald-400" : "text-destructive/70",
-                        )}
+                        className={cn('h-4 w-4 shrink-0', ds.pathExists ? 'text-emerald-400' : 'text-destructive/70')}
                       />
                     )}
                     <div className="min-w-0 flex-1">
@@ -137,7 +132,7 @@ export function DatasetBuilder({
                         <span className="text-sm font-medium">{ds.name}</span>
                         {isBuilding && (
                           <span className="text-[10px] text-blue-400">
-                            {ds.buildStatus === "running" ? "building…" : "queued…"}
+                            {ds.buildStatus === 'running' ? 'building…' : 'queued…'}
                           </span>
                         )}
                         {isMissing && (
@@ -150,7 +145,7 @@ export function DatasetBuilder({
                       <p className="text-muted-foreground font-mono text-xs break-all">{ds.path}</p>
                     </div>
                     <Badge variant="secondary" className="shrink-0 text-[10px]">
-                      {ds.buckets.length} bucket{ds.buckets.length !== 1 ? "s" : ""}
+                      {ds.buckets.length} bucket{ds.buckets.length !== 1 ? 's' : ''}
                     </Badge>
                     <ConfirmDialog
                       title="Delete dataset?"
@@ -188,7 +183,7 @@ export function DatasetBuilder({
               id="dsName"
               placeholder="e.g. nature-multi-res"
               value={datasetName}
-              onChange={(e) => setDatasetName(e.target.value)}
+              onChange={e => setDatasetName(e.target.value)}
             />
           </div>
 
@@ -196,11 +191,9 @@ export function DatasetBuilder({
             <EmptyState>No completed preprocessing jobs. Process some folders first.</EmptyState>
           ) : (
             <div className="space-y-2">
-              <Label className="text-muted-foreground text-xs tracking-wider uppercase">
-                Select Processed Buckets
-              </Label>
+              <Label className="text-muted-foreground text-xs tracking-wider uppercase">Select Processed Buckets</Label>
               <div className="max-h-64 space-y-1.5 overflow-y-auto">
-                {completedJobs.map((job) => {
+                {completedJobs.map(job => {
                   const checked = selectedJobIds.has(job.id);
                   return (
                     <button
@@ -208,10 +201,8 @@ export function DatasetBuilder({
                       type="button"
                       onClick={() => toggleJob(job.id)}
                       className={cn(
-                        "flex w-full cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors",
-                        checked
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/30",
+                        'flex w-full cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors',
+                        checked ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/30',
                       )}
                     >
                       {checked ? (
@@ -231,7 +222,7 @@ export function DatasetBuilder({
           {selectedJobIds.size > 0 && datasetName.trim() && (
             <div className="flex items-center justify-between pt-2">
               <span className="text-muted-foreground text-sm">
-                {selectedJobIds.size} bucket{selectedJobIds.size !== 1 ? "s" : ""} selected
+                {selectedJobIds.size} bucket{selectedJobIds.size !== 1 ? 's' : ''} selected
               </span>
               <Button onClick={handleBuild}>
                 <Plus className="mr-1.5 h-4 w-4" />

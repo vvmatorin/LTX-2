@@ -1,22 +1,22 @@
-"use client";
+'use client';
 
-import { Switch as SwitchPrimitive } from "@base-ui/react/switch";
+import { Switch as SwitchPrimitive } from '@base-ui/react/switch';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 function Switch({
   className,
-  size = "default",
+  size = 'default',
   ...props
 }: SwitchPrimitive.Root.Props & {
-  size?: "sm" | "default";
+  size?: 'sm' | 'default';
 }) {
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
       data-size={size}
       className={cn(
-        "peer group/switch focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:border-primary/60 relative inline-flex shrink-0 items-center rounded-full border border-white/14 bg-[linear-gradient(180deg,oklch(0.23_0.03_258),oklch(0.18_0.03_258))] transition-all duration-200 outline-none after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:ring-3 aria-invalid:ring-3 data-checked:bg-[linear-gradient(180deg,oklch(0.75_0.17_252),oklch(0.67_0.18_245))] data-disabled:cursor-not-allowed data-disabled:opacity-50 data-unchecked:shadow-[inset_0_1px_2px_oklch(1_0_0_/_0.05)] data-[size=default]:h-[24px] data-[size=default]:w-[44px] data-[size=sm]:h-[18px] data-[size=sm]:w-[34px]",
+        'peer group/switch focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:border-primary/60 relative inline-flex shrink-0 items-center rounded-full border border-white/14 bg-[linear-gradient(180deg,oklch(0.23_0.03_258),oklch(0.18_0.03_258))] transition-all duration-200 outline-none after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:ring-3 aria-invalid:ring-3 data-checked:bg-[linear-gradient(180deg,oklch(0.75_0.17_252),oklch(0.67_0.18_245))] data-disabled:cursor-not-allowed data-disabled:opacity-50 data-unchecked:shadow-[inset_0_1px_2px_oklch(1_0_0_/_0.05)] data-[size=default]:h-[24px] data-[size=default]:w-[44px] data-[size=sm]:h-[18px] data-[size=sm]:w-[34px]',
         className,
       )}
       {...props}

@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api";
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 
 interface WorkerStatus {
   alive: boolean;
@@ -10,9 +10,10 @@ interface WorkerStatus {
 
 export function useWorkerStatus() {
   const query = useQuery<WorkerStatus>({
-    queryKey: ["worker-status"],
-    queryFn: () => apiFetch<WorkerStatus>("/api/worker/status"),
+    queryKey: ['worker-status'],
+    queryFn: () => apiFetch<WorkerStatus>('/api/worker/status'),
     refetchInterval: 3000,
+    refetchIntervalInBackground: false,
   });
 
   return {

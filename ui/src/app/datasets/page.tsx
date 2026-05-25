@@ -1,41 +1,43 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import type { DatasetBucket } from "@/lib/types";
+import { useState, useMemo } from 'react';
+import type { DatasetBucket } from '@/lib/types';
 
-import { useFolders } from "@/hooks/useFolders";
-import { useJobs } from "@/hooks/useJobs";
-import { useDatasets } from "@/hooks/useDatasets";
-import { useSettings } from "@/hooks/useSettings";
-import { SourceFolderCard } from "@/components/SourceFolderCard";
-import { FolderConfigPanel, type ResFrameConfig } from "@/components/FolderConfigPanel";
-import { ProcessingMatrix } from "@/components/ProcessingMatrix";
-import { DatasetBuilder } from "@/components/DatasetBuilder";
-import { PageHeader } from "@/components/PageHeader";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { EmptyState } from "@/components/EmptyState";
-import { FolderPlus } from "lucide-react";
+import { useFolders } from '@/hooks/useFolders';
+import { useJobs } from '@/hooks/useJobs';
+import { useDatasets } from '@/hooks/useDatasets';
+import { useSettings } from '@/hooks/useSettings';
+import { SourceFolderCard } from '@/components/SourceFolderCard';
+import { FolderConfigPanel, type ResFrameConfig } from '@/components/FolderConfigPanel';
+import { ProcessingMatrix } from '@/components/ProcessingMatrix';
+import { DatasetBuilder } from '@/components/DatasetBuilder';
+import { PageHeader } from '@/components/PageHeader';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { EmptyState } from '@/components/EmptyState';
+import { FolderPlus } from 'lucide-react';
 
 export default function DatasetsPage() {
-  const { folders, addFolder, removeFolder } = useFolders();
-  const { jobs, createJob, refreshJobs } = useJobs();
-  const { datasets, createDataset, deleteDataset, refreshDatasets } = useDatasets();
+  const { folders, addFolder, removeFolder, error: foldersError } = useFolders();
+  const { jobs, createJob, refreshJobs, error: jobsError } = useJobs();
+  const { datasets, createDataset, deleteDataset, refreshDatasets, error: datasetsError } = useDatasets();
   const { settings } = useSettings();
 
+  const fetchError = foldersError || jobsError || datasetsError;
+
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
-  const [newFolderPath, setNewFolderPath] = useState("");
+  const [newFolderPath, setNewFolderPath] = useState('');
+  const [folderError, setFolderError] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
+  const toErrorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
   const effectiveFolderId = selectedFolderId ?? folders[0]?.id ?? null;
-  const selectedFolder = folders.find((f) => f.id === effectiveFolderId) ?? null;
+  const selectedFolder = folders.find(f => f.id === effectiveFolderId) ?? null;
   const completedJobs = useMemo(
-    () =>
-      jobs.filter(
-        (j) => j.type === "preprocess" && j.status === "completed" && j.outputExists !== false,
-      ),
+    () => jobs.filter(j => j.type === 'preprocess' && j.status === 'completed' && j.outputExists !== false),
     [jobs],
   );
 
@@ -50,19 +52,21 @@ export default function DatasetsPage() {
 
   const handleAddFolder = async () => {
     if (!newFolderPath.trim()) return;
+    setFolderError(null);
     try {
       await addFolder(newFolderPath.trim());
-      setNewFolderPath("");
+      setNewFolderPath('');
     } catch (err) {
-      console.error("Failed to add folder:", err);
+      setFolderError(toErrorMessage(err));
     }
   };
 
   const handleRemoveFolder = async (id: number) => {
+    setFolderError(null);
     try {
       await removeFolder(id);
     } catch (err) {
-      console.error("Failed to remove folder:", err);
+      setFolderError(toErrorMessage(err));
     }
     if (effectiveFolderId === id) setSelectedFolderId(null);
   };
@@ -72,8 +76,8 @@ export default function DatasetsPage() {
   ) => {
     for (const c of configs) {
       await createJob({
-        type: "preprocess",
-        name: `${selectedFolder?.path ?? "?"}/_buckets/${c.resolution}_${c.frameCount}`,
+        type: 'preprocess',
+        name: `${selectedFolder?.path ?? '?'}/_buckets/${c.resolution}_${c.frameCount}`,
         config: {
           folderId: effectiveFolderId,
           resolution: c.resolution,
@@ -90,7 +94,7 @@ export default function DatasetsPage() {
 
   const handleBuildDataset = async (name: string, buckets: DatasetBucket[]) => {
     setBuildError(null);
-    const datasetDir = settings?.datasetDir?.replace(/\/+$/, "") || "/tmp/ltx-datasets";
+    const datasetDir = settings?.datasetDir?.replace(/\/+$/, '') || '/tmp/ltx-datasets';
     const datasetPath = `${datasetDir}/${name}`;
 
     try {
@@ -109,6 +113,12 @@ export default function DatasetsPage() {
         subtitle="Manage source folders, process videos into latents, and build training datasets"
       />
 
+      {fetchError && (
+        <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
+          {fetchError instanceof Error ? fetchError.message : String(fetchError)}
+        </div>
+      )}
+
       <Tabs defaultValue="folders" className="space-y-4">
         <TabsList>
           <TabsTrigger value="folders">Source Folders</TabsTrigger>
@@ -121,8 +131,8 @@ export default function DatasetsPage() {
             <Input
               placeholder="Enter folder path, e.g. /data/my-dataset/v1/videos"
               value={newFolderPath}
-              onChange={(e) => setNewFolderPath(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddFolder()}
+              onChange={e => setNewFolderPath(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddFolder()}
               className="font-mono text-xs"
             />
             <Button onClick={handleAddFolder} className="shrink-0">
@@ -131,8 +141,14 @@ export default function DatasetsPage() {
             </Button>
           </div>
 
+          {folderError && (
+            <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
+              {folderError}
+            </div>
+          )}
+
           <div className="grid gap-3">
-            {folders.map((folder) => (
+            {folders.map(folder => (
               <SourceFolderCard
                 key={folder.id}
                 folder={folder}
@@ -142,9 +158,7 @@ export default function DatasetsPage() {
               />
             ))}
             {folders.length === 0 && (
-              <EmptyState className="p-8">
-                No folders added yet. Enter a path above to get started.
-              </EmptyState>
+              <EmptyState className="p-8">No folders added yet. Enter a path above to get started.</EmptyState>
             )}
           </div>
         </TabsContent>
@@ -152,10 +166,7 @@ export default function DatasetsPage() {
         <TabsContent value="processing" className="space-y-4">
           {selectedFolder ? (
             <>
-              <FolderConfigPanel
-                folder={selectedFolder}
-                onQueueProcessing={handleQueueProcessing}
-              />
+              <FolderConfigPanel folder={selectedFolder} onQueueProcessing={handleQueueProcessing} />
               <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} />
             </>
           ) : (
@@ -175,11 +186,12 @@ export default function DatasetsPage() {
             completedJobs={completedJobs}
             datasets={datasets}
             onBuildDataset={handleBuildDataset}
-            onDeleteDataset={async (id) => {
+            onDeleteDataset={async id => {
+              setBuildError(null);
               try {
                 await deleteDataset(id);
               } catch (err) {
-                console.error(err);
+                setBuildError(toErrorMessage(err));
               }
             }}
             onRefresh={handleRefresh}

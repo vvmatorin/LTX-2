@@ -1,10 +1,10 @@
-import { NextResponse } from "next/server";
-import { getSetting } from "@/lib/settings";
+import { NextResponse } from 'next/server';
+import { getSetting } from '@/lib/settings';
 
 const STALE_THRESHOLD_MS = 5000;
 
 export async function GET() {
-  const lastSeen = getSetting("worker_heartbeat");
+  const lastSeen = getSetting('worker_heartbeat');
   if (!lastSeen) {
     return NextResponse.json({ alive: false, lastSeen: null });
   }

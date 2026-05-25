@@ -1,49 +1,88 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { useSettings } from "@/hooks/useSettings";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/PageHeader";
-import { Save, Loader2 } from "lucide-react";
-import type { AppSettings } from "@/lib/types";
+import { useState } from 'react';
+import { useSettings } from '@/hooks/useSettings';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/PageHeader';
+import { Save, Loader2 } from 'lucide-react';
+import type { AppSettings } from '@/lib/types';
 
-function buildLocalSettings(api: AppSettings): AppSettings {
-  return {
-    modelPath: api.modelPath || "",
-    textEncoderPath: api.textEncoderPath || "",
-    outputDir: api.outputDir || "",
-    datasetDir: api.datasetDir || "",
-    scriptsDir: api.scriptsDir || "",
-  };
-}
+const FIELDS: Array<{
+  key: keyof AppSettings;
+  label: string;
+  placeholder: string;
+  group: 'paths' | 'dirs';
+}> = [
+  {
+    key: 'modelPath',
+    label: 'LTX Checkpoint Path',
+    placeholder: '/path/to/ltx-2.3-22b-dev.safetensors',
+    group: 'paths',
+  },
+  {
+    key: 'textEncoderPath',
+    label: 'Text Encoder Path',
+    placeholder: '/path/to/google/gemma-3-12b-it',
+    group: 'paths',
+  },
+  { key: 'outputDir', label: 'Training Output Directory', placeholder: '/path/to/training/outputs', group: 'dirs' },
+  {
+    key: 'datasetDir',
+    label: 'Dataset Directory',
+    placeholder: '/path/to/preprocessed/datasets',
+    group: 'dirs',
+  },
+  {
+    key: 'scriptsDir',
+    label: 'Scripts Directory',
+    placeholder: '/path/to/LTX-2/packages/ltx-trainer/scripts',
+    group: 'dirs',
+  },
+];
 
 export default function SettingsPage() {
-  const { settings: apiSettings, saveSettings, isSaving } = useSettings();
+  const { settings, isLoading, isError, error, saveSettings, isSaving, saveError } = useSettings();
 
-  if (!apiSettings) {
+  if (isLoading || !settings) {
     return (
       <div className="flex items-center justify-center p-12">
-        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+        {isError ? (
+          <p className="text-destructive text-sm">{error instanceof Error ? error.message : 'Failed to load'}</p>
+        ) : (
+          <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+        )}
       </div>
     );
   }
 
-  return <SettingsForm initial={apiSettings} saveSettings={saveSettings} isSaving={isSaving} />;
+  return (
+    <SettingsForm
+      // Key resets local form state whenever the upstream settings change
+      // (after save success / external refetch).
+      key={JSON.stringify(settings)}
+      initial={settings}
+      saveSettings={saveSettings}
+      isSaving={isSaving}
+      saveError={saveError}
+    />
+  );
 }
 
 function SettingsForm({
   initial,
   saveSettings,
   isSaving,
+  saveError,
 }: {
   initial: AppSettings;
   saveSettings: (s: Partial<AppSettings>) => Promise<unknown>;
   isSaving: boolean;
+  saveError: Error | null;
 }) {
-  const [local, setLocal] = useState<AppSettings>(() => buildLocalSettings(initial));
+  const [local, setLocal] = useState<AppSettings>(initial);
   const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
@@ -52,13 +91,16 @@ function SettingsForm({
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // react-query surfaces the error via isError
+      // saveError prop will render below
     }
   };
 
   const update = (key: keyof AppSettings, value: string) => {
-    setLocal((prev) => ({ ...prev, [key]: value }));
+    setLocal(prev => ({ ...prev, [key]: value }));
   };
+
+  const paths = FIELDS.filter(f => f.group === 'paths');
+  const dirs = FIELDS.filter(f => f.group === 'dirs');
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-3 md:p-4">
@@ -67,31 +109,12 @@ function SettingsForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Model Paths</CardTitle>
-          <CardDescription>
-            Default model and text encoder paths used across all jobs
-          </CardDescription>
+          <CardDescription>Default model and text encoder paths used across all jobs</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="modelPath">LTX Checkpoint Path</Label>
-            <Input
-              id="modelPath"
-              value={local.modelPath}
-              onChange={(e) => update("modelPath", e.target.value)}
-              placeholder="/path/to/ltx-2.3-22b-dev.safetensors"
-              className="font-mono text-xs"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="textEncoderPath">Text Encoder Path</Label>
-            <Input
-              id="textEncoderPath"
-              value={local.textEncoderPath}
-              onChange={(e) => update("textEncoderPath", e.target.value)}
-              placeholder="/path/to/google/gemma-3-12b-it"
-              className="font-mono text-xs"
-            />
-          </div>
+          {paths.map(f => (
+            <FieldRow key={f.key} field={f} value={local[f.key]} onChange={v => update(f.key, v)} />
+          ))}
         </CardContent>
       </Card>
 
@@ -101,45 +124,47 @@ function SettingsForm({
           <CardDescription>Output and scripts paths</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="outputDir">Training Output Directory</Label>
-            <Input
-              id="outputDir"
-              value={local.outputDir}
-              onChange={(e) => update("outputDir", e.target.value)}
-              placeholder="/path/to/training/outputs"
-              className="font-mono text-xs"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="datasetDir">Dataset Directory</Label>
-            <Input
-              id="datasetDir"
-              value={local.datasetDir}
-              onChange={(e) => update("datasetDir", e.target.value)}
-              placeholder="/path/to/preprocessed/datasets"
-              className="font-mono text-xs"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scriptsDir">Scripts Directory</Label>
-            <Input
-              id="scriptsDir"
-              value={local.scriptsDir}
-              onChange={(e) => update("scriptsDir", e.target.value)}
-              placeholder="/path/to/LTX-2/packages/ltx-trainer/scripts"
-              className="font-mono text-xs"
-            />
-          </div>
+          {dirs.map(f => (
+            <FieldRow key={f.key} field={f} value={local[f.key]} onChange={v => update(f.key, v)} />
+          ))}
         </CardContent>
       </Card>
+
+      {saveError && (
+        <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
+          {saveError instanceof Error ? saveError.message : String(saveError)}
+        </div>
+      )}
 
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={isSaving}>
           <Save className="mr-1.5 h-4 w-4" />
-          {saved ? "Saved!" : isSaving ? "Saving..." : "Save Settings"}
+          {saved ? 'Saved!' : isSaving ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function FieldRow({
+  field,
+  value,
+  onChange,
+}: {
+  field: (typeof FIELDS)[number];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={field.key}>{field.label}</Label>
+      <Input
+        id={field.key}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={field.placeholder}
+        className="font-mono text-xs"
+      />
     </div>
   );
 }

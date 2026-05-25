@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import type { TrainingConfig } from "@/lib/types";
+import type { TrainingConfig } from '@/lib/types';
 import {
   ModelSection,
   LoraSection,
@@ -10,7 +10,7 @@ import {
   ValidationSection,
   CheckpointsSection,
   GeneralSection,
-} from "./training/sections";
+} from './training/sections';
 
 interface Props {
   config: TrainingConfig;
@@ -23,7 +23,7 @@ export function TrainingConfigForm({ config, onChange }: Props) {
     patch: Partial<TrainingConfig[K] & Record<string, unknown>>,
   ) => {
     const current = config[section];
-    if (typeof current === "object" && current !== null) {
+    if (typeof current === 'object' && current !== null) {
       onChange({
         ...config,
         [section]: { ...(current as object), ...patch },

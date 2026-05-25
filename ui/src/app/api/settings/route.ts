@@ -1,14 +1,14 @@
-import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { settings } from "@/db/schema";
-import { upsertSettings } from "@/lib/settings";
+import { NextResponse } from 'next/server';
+import { db } from '@/db';
+import { settings } from '@/db/schema';
+import { upsertSettings } from '@/lib/settings';
 
 const DEFAULT_SETTINGS: Record<string, string> = {
-  modelPath: "",
-  textEncoderPath: "",
-  outputDir: "",
-  datasetDir: "",
-  scriptsDir: "",
+  modelPath: '',
+  textEncoderPath: '',
+  outputDir: '',
+  datasetDir: '',
+  scriptsDir: '',
 };
 
 export async function GET() {
@@ -25,11 +25,11 @@ export async function PUT(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
   const pairs: Record<string, string> = {};
   for (const [key, value] of Object.entries(body)) {
-    if (typeof value === "string") {
+    if (typeof value === 'string') {
       pairs[key] = value;
     }
   }

@@ -1,21 +1,15 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { ChevronDown } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export function Section({
   title,
@@ -31,17 +25,19 @@ export function Section({
   return (
     <Card>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CardHeader className="cursor-pointer py-3 select-none" onClick={() => setOpen(!open)}>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-semibold">{title}</CardTitle>
-            <ChevronDown
-              className={cn(
-                "text-muted-foreground h-4 w-4 transition-transform",
-                open && "rotate-180",
-              )}
-            />
-          </div>
-        </CardHeader>
+        <CollapsibleTrigger
+          nativeButton={false}
+          render={
+            <CardHeader className="w-full cursor-pointer py-3 text-left select-none">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg font-semibold">{title}</CardTitle>
+                <ChevronDown
+                  className={cn('text-muted-foreground h-4 w-4 transition-transform', open && 'rotate-180')}
+                />
+              </div>
+            </CardHeader>
+          }
+        />
         <CollapsibleContent>
           <CardContent className="space-y-4 pt-0">{children}</CardContent>
         </CollapsibleContent>
@@ -63,19 +59,36 @@ export function NumberField({
   step?: number;
   mono?: boolean;
 }) {
+  const [raw, setRaw] = useState<string>(() => String(value));
+
+  // Keep the visible string in sync with the canonical number when it changes
+  // externally (e.g. preset selection, restored config) without disturbing the
+  // user's in-progress typing.
+  useEffect(() => {
+    if (raw === '' || raw === '-' || raw.endsWith('.') || raw.endsWith('e') || raw.endsWith('e-')) return;
+    if (Number(raw) !== value) setRaw(String(value));
+  }, [value, raw]);
+
   return (
     <div className="space-y-2">
       <Label className="text-xs">{label}</Label>
       <Input
         type="number"
         step={step}
-        value={value}
-        onChange={(e) => {
-          const raw = e.target.value;
-          if (raw === "" || raw === "-") return;
-          onChange(Number(raw));
+        value={raw}
+        onChange={e => {
+          const next = e.target.value;
+          setRaw(next);
+          const n = Number(next);
+          if (next !== '' && next !== '-' && Number.isFinite(n)) {
+            onChange(n);
+          }
         }}
-        className={cn("text-xs", mono && "font-mono")}
+        onBlur={() => {
+          const n = Number(raw);
+          if (!Number.isFinite(n)) setRaw(String(value));
+        }}
+        className={cn('text-xs', mono && 'font-mono')}
       />
     </div>
   );
@@ -99,9 +112,9 @@ export function TextField({
       <Label className="text-xs">{label}</Label>
       <Input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className={cn("text-xs", mono && "font-mono")}
+        className={cn('text-xs', mono && 'font-mono')}
       />
     </div>
   );
@@ -123,7 +136,7 @@ export function SelectField({
       <Label className="text-xs">{label}</Label>
       <Select
         value={value}
-        onValueChange={(v) => {
+        onValueChange={v => {
           if (v) onChange(v);
         }}
       >
@@ -131,7 +144,7 @@ export function SelectField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {options.map((o) => (
+          {options.map(o => (
             <SelectItem key={o.value} value={o.value}>
               {o.label}
             </SelectItem>
@@ -168,13 +181,27 @@ export function ListInput({
   onChange: (v: string[]) => void;
   placeholder?: string;
 }) {
+  // Preserve blank/in-progress lines while typing; only collapse blanks on blur
+  // so the user can press Enter without losing focus on the empty new line.
+  const [text, setText] = useState<string>(() => value.join('\n'));
+
+  useEffect(() => {
+    const joined = value.join('\n');
+    if (joined !== text.split('\n').filter(Boolean).join('\n')) {
+      setText(joined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
   return (
     <Textarea
-      value={value.join("\n")}
-      onChange={(e) => {
-        const lines = e.target.value.split("\n").filter((s) => s.trim() !== "");
-        onChange(lines);
+      value={text}
+      onChange={e => {
+        const next = e.target.value;
+        setText(next);
+        onChange(next.split('\n').filter(s => s.trim() !== ''));
       }}
+      onBlur={() => setText(value.join('\n'))}
       placeholder={placeholder}
       rows={3}
       className="text-xs"
@@ -182,7 +209,7 @@ export function ListInput({
   );
 }
 
-const VIDEO_DIM_LABELS = ["Width", "Height", "Frames"] as const;
+const VIDEO_DIM_LABELS = ['Width', 'Height', 'Frames'] as const;
 
 export function VideoDimsField({
   value,
@@ -199,7 +226,7 @@ export function VideoDimsField({
           <Input
             type="number"
             value={value[i]}
-            onChange={(e) => {
+            onChange={e => {
               const next = [...value] as [number, number, number];
               next[i] = Number(e.target.value) || 0;
               onChange(next);

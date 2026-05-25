@@ -1,7 +1,7 @@
-import { processQueue } from "./processQueue";
-import { getWorkerDb } from "./db";
+import { processQueue } from './processQueue';
+import { getWorkerDb } from './db';
 
-console.log("[worker] LTX-UI job queue worker started");
+console.log('[worker] LTX-UI job queue worker started');
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -17,18 +17,18 @@ async function tick() {
     writeHeartbeat();
     await processQueue();
   } catch (err) {
-    console.error("[worker] processQueue error:", err);
+    console.error('[worker] processQueue error:', err);
   }
 }
 
 setInterval(tick, POLL_INTERVAL_MS);
 
-process.on("SIGINT", () => {
-  console.log("[worker] Received SIGINT, shutting down");
+process.on('SIGINT', () => {
+  console.log('[worker] Received SIGINT, shutting down');
   process.exit(0);
 });
 
-process.on("SIGTERM", () => {
-  console.log("[worker] Received SIGTERM, shutting down");
+process.on('SIGTERM', () => {
+  console.log('[worker] Received SIGTERM, shutting down');
   process.exit(0);
 });

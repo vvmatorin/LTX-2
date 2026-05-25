@@ -1,34 +1,41 @@
-"use client";
+'use client';
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { useJobs } from "@/hooks/useJobs";
-import { useTensorboard } from "@/hooks/useTensorboard";
-import { formatDuration } from "@/lib/format";
-import { LogViewer } from "@/components/LogViewer";
-import { JobQueueList } from "@/components/JobQueueList";
-import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Separator } from "@/components/ui/separator";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { Loader2, Square, ChevronDown, Clock, Activity, BarChart3, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState, useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
+import { useJobs } from '@/hooks/useJobs';
+import { useTensorboard } from '@/hooks/useTensorboard';
+import { formatDuration } from '@/lib/format';
+import { JobQueueList } from '@/components/JobQueueList';
+import { PageHeader } from '@/components/PageHeader';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Separator } from '@/components/ui/separator';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Loader2, Square, ChevronDown, Clock, Activity, BarChart3, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+// xterm is ~150KB and only used while a job is active; load it lazily.
+const LogViewer = dynamic(() => import('@/components/LogViewer').then(m => m.LogViewer), {
+  ssr: false,
+  loading: () => (
+    <div className="surface-neo border-border flex h-[360px] items-center justify-center rounded-2xl border">
+      <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+    </div>
+  ),
+});
 
 export default function RunsPage() {
   const router = useRouter();
-  const { jobs, stopJob } = useJobs();
+  const { jobs, stopJob, error: jobsError } = useJobs();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tbFullscreen, setTbFullscreen] = useState(false);
 
-  const activeJob = jobs.find((j) => j.status === "running") ?? null;
-  const queuedJobs = useMemo(() => jobs.filter((j) => j.status === "queued"), [jobs]);
-  const historyJobs = useMemo(
-    () => jobs.filter((j) => ["completed", "failed", "cancelled"].includes(j.status)),
-    [jobs],
-  );
+  const activeJob = jobs.find(j => j.status === 'running') ?? null;
+  const queuedJobs = useMemo(() => jobs.filter(j => j.status === 'queued'), [jobs]);
+  const historyJobs = useMemo(() => jobs.filter(j => ['completed', 'failed', 'cancelled'].includes(j.status)), [jobs]);
 
   const tb = useTensorboard(activeJob);
 
@@ -36,7 +43,7 @@ export default function RunsPage() {
     try {
       await stopJob(id);
     } catch (err) {
-      console.error("Failed to stop job:", err);
+      console.error('Failed to stop job:', err);
     }
   };
 
@@ -44,10 +51,13 @@ export default function RunsPage() {
 
   return (
     <div className="space-y-6 p-3 md:p-4">
-      <PageHeader
-        title="Runs"
-        subtitle="Monitor active jobs, manage the queue, and review history"
-      />
+      <PageHeader title="Runs" subtitle="Monitor active jobs, manage the queue, and review history" />
+
+      {jobsError && (
+        <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
+          {jobsError instanceof Error ? jobsError.message : String(jobsError)}
+        </div>
+      )}
 
       {activeJob ? (
         <Card className="ring-glow border-blue-400/30">
@@ -60,10 +70,7 @@ export default function RunsPage() {
                 <div>
                   <CardTitle className="text-sm">{activeJob.name}</CardTitle>
                   <div className="mt-0.5 flex items-center gap-2">
-                    <Badge
-                      variant="outline"
-                      className="border-blue-500/30 bg-blue-500/10 text-[10px] text-blue-400"
-                    >
+                    <Badge variant="outline" className="border-blue-500/30 bg-blue-500/10 text-[10px] text-blue-400">
                       {activeJob.type}
                     </Badge>
                     {elapsedDisplay && (
@@ -76,13 +83,8 @@ export default function RunsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {activeJob.type === "training" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!tb.ready}
-                    onClick={() => setTbFullscreen(true)}
-                  >
+                {activeJob.type === 'training' && (
+                  <Button variant="outline" size="sm" disabled={!tb.ready} onClick={() => setTbFullscreen(true)}>
                     {tb.running && !tb.ready ? (
                       <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                     ) : (
@@ -133,8 +135,8 @@ export default function RunsPage() {
             <p className="text-sm font-medium">No active job</p>
             <p className="mt-1 text-xs">
               {queuedJobs.length > 0
-                ? `${queuedJobs.length} job${queuedJobs.length !== 1 ? "s" : ""} in queue`
-                : "Queue a preprocessing or training job to get started"}
+                ? `${queuedJobs.length} job${queuedJobs.length !== 1 ? 's' : ''} in queue`
+                : 'Queue a preprocessing or training job to get started'}
             </p>
           </CardContent>
         </Card>
@@ -149,27 +151,15 @@ export default function RunsPage() {
 
       <Separator />
 
-      <Collapsible open={historyOpen}>
-        <button
-          type="button"
-          className="flex w-full items-center justify-between py-1"
-          onClick={() => setHistoryOpen(!historyOpen)}
-        >
-          <h2 className="text-muted-foreground text-sm font-medium">
-            History ({historyJobs.length})
-          </h2>
+      <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+        <CollapsibleTrigger className="flex w-full items-center justify-between py-1">
+          <h2 className="text-muted-foreground text-sm font-medium">History ({historyJobs.length})</h2>
           <ChevronDown
-            className={cn(
-              "text-muted-foreground h-4 w-4 transition-transform",
-              historyOpen && "rotate-180",
-            )}
+            className={cn('text-muted-foreground h-4 w-4 transition-transform', historyOpen && 'rotate-180')}
           />
-        </button>
+        </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
-          <JobQueueList
-            jobs={historyJobs}
-            onReuse={(job) => router.push(`/training?fromJob=${job.id}`)}
-          />
+          <JobQueueList jobs={historyJobs} onReuse={job => router.push(`/training?fromJob=${job.id}`)} />
         </CollapsibleContent>
       </Collapsible>
 
@@ -182,11 +172,7 @@ export default function RunsPage() {
             </Button>
           </div>
           {tb.ready ? (
-            <iframe
-              src="/tensorboard/"
-              className="w-full flex-1 border-0"
-              title="TensorBoard Fullscreen"
-            />
+            <iframe src="/tensorboard/" className="w-full flex-1 border-0" title="TensorBoard Fullscreen" />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />

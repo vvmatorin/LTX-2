@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
 interface Props {
   children: React.ReactNode;
@@ -9,7 +9,7 @@ export function EmptyState({ children, className }: Props) {
   return (
     <div
       className={cn(
-        "border-border text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm",
+        'border-border text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm',
         className,
       )}
     >

@@ -2,18 +2,16 @@ export interface SourceFolder {
   id: number;
   path: string;
   name: string;
-  mediaType: "images" | "videos" | "mixed";
+  mediaType: 'images' | 'videos' | 'mixed';
   fileCount: number;
-  hasDatasetJson: boolean;
-  hasAudioJson: boolean;
   createdAt: string;
 }
 
 export interface ProcessingJob {
   id: number;
-  type: "preprocess" | "merge" | "training";
+  type: 'preprocess' | 'merge' | 'training';
   name: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   config: Record<string, unknown>;
   queuePosition: number;
   pid: number | null;
@@ -34,7 +32,7 @@ export interface TrainingDataset {
   path: string;
   buckets: DatasetBucket[];
   pathExists: boolean;
-  buildStatus: "queued" | "running" | null;
+  buildStatus: 'queued' | 'running' | null;
   createdAt: string;
 }
 
@@ -53,7 +51,7 @@ export interface TrainingConfig {
   model: {
     modelPath: string;
     textEncoderPath: string;
-    trainingMode: "lora" | "full";
+    trainingMode: 'lora' | 'full';
     loadCheckpoint: string | null;
   };
   lora: {
@@ -63,7 +61,7 @@ export interface TrainingConfig {
     targetModules: string[];
   };
   trainingStrategy: {
-    name: "text_to_video";
+    name: 'text_to_video';
     firstFrameConditioningP: number;
     withAudio: boolean;
     audioLatentsDir: string;
@@ -86,8 +84,8 @@ export interface TrainingConfig {
     enableGradientCheckpointing: boolean;
   };
   flowMatching: {
-    timestepSamplingMode: "uniform" | "shifted_logit_normal";
-    timestepLossWeighting: "none" | "bell" | "weighted";
+    timestepSamplingMode: 'uniform' | 'shifted_logit_normal';
+    timestepLossWeighting: 'none' | 'bell' | 'weighted';
   };
   data?: {
     preprocessedDataRoot?: string;

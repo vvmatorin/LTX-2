@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { cn } from "@/lib/utils";
-import { Button } from "./button";
+import { AlertDialog } from '@base-ui/react/alert-dialog';
+import { cn } from '@/lib/utils';
+import { Button } from './button';
 
 interface ConfirmDialogProps {
   title: string;
   description: string;
   confirmLabel?: string;
   cancelLabel?: string;
-  variant?: "destructive" | "default";
+  variant?: 'destructive' | 'default';
   onConfirm: () => void;
   children: React.ReactNode;
 }
@@ -17,9 +17,9 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   title,
   description,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
-  variant = "destructive",
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  variant = 'destructive',
   onConfirm,
   children,
 }: ConfirmDialogProps) {
@@ -47,8 +47,7 @@ export function ConfirmDialog({
                   variant={variant}
                   size="sm"
                   className={cn(
-                    variant === "destructive" &&
-                      "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                    variant === 'destructive' && 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
                   )}
                   onClick={onConfirm}
                 >

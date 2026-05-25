@@ -1,22 +1,20 @@
-import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { sourceFolders } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { safeId } from "@/lib/utils";
-import fs from "fs";
-import path from "path";
+import { NextResponse } from 'next/server';
+import { db } from '@/db';
+import { sourceFolders } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+import { safeId } from '@/lib/utils';
+import fs from 'fs';
+import path from 'path';
 
-const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png"]);
-const VIDEO_EXTS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm"]);
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png']);
+const VIDEO_EXTS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.webm']);
 
 function scanFolderMeta(folderPath: string): {
   fileCount: number;
-  mediaType: "images" | "videos" | "mixed";
-  hasDatasetJson: boolean;
-  hasAudioJson: boolean;
+  mediaType: 'images' | 'videos' | 'mixed';
 } {
   if (!fs.existsSync(folderPath)) {
-    return { fileCount: 0, mediaType: "videos", hasDatasetJson: false, hasAudioJson: false };
+    return { fileCount: 0, mediaType: 'videos' };
   }
 
   const entries = fs.readdirSync(folderPath);
@@ -29,12 +27,10 @@ function scanFolderMeta(folderPath: string): {
     else if (VIDEO_EXTS.has(ext)) videos++;
   }
 
-  const hasDatasetJson = entries.includes("dataset.json");
-  const hasAudioJson = entries.includes("dataset_audio.json");
-  const mediaType: "images" | "videos" | "mixed" =
-    images > 0 && videos > 0 ? "mixed" : images > 0 ? "images" : "videos";
+  const mediaType: 'images' | 'videos' | 'mixed' =
+    images > 0 && videos > 0 ? 'mixed' : images > 0 ? 'images' : 'videos';
 
-  return { fileCount: images + videos, mediaType, hasDatasetJson, hasAudioJson };
+  return { fileCount: images + videos, mediaType };
 }
 
 export async function GET() {
@@ -47,16 +43,16 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
   const folderPath = body.path as string | undefined;
 
   if (!folderPath) {
-    return NextResponse.json({ error: "path is required" }, { status: 400 });
+    return NextResponse.json({ error: 'path is required' }, { status: 400 });
   }
 
-  const parts = folderPath.split("/").filter(Boolean);
-  const name = (body.name as string) || parts[parts.length - 1] || "folder";
+  const parts = folderPath.split('/').filter(Boolean);
+  const name = (body.name as string) || parts[parts.length - 1] || 'folder';
 
   const meta = scanFolderMeta(folderPath);
 
@@ -67,8 +63,6 @@ export async function POST(req: Request) {
       name,
       mediaType: meta.mediaType,
       fileCount: meta.fileCount,
-      hasDatasetJson: meta.hasDatasetJson,
-      hasAudioJson: meta.hasAudioJson,
     })
     .returning()
     .get();
@@ -78,9 +72,9 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
-  const id = safeId(searchParams.get("id"));
+  const id = safeId(searchParams.get('id'));
   if (!id) {
-    return NextResponse.json({ error: "id is required" }, { status: 400 });
+    return NextResponse.json({ error: 'id is required' }, { status: 400 });
   }
   db.delete(sourceFolders).where(eq(sourceFolders.id, id)).run();
   return NextResponse.json({ ok: true });

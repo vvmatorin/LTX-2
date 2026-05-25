@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
-import { getSetting, setSetting } from "@/lib/settings";
-import { spawn } from "child_process";
+import { NextResponse } from 'next/server';
+import { getSetting, setSetting } from '@/lib/settings';
+import { spawn } from 'child_process';
 
 // Defaults must match run.sh and ui/next.config.ts.
-const TB_HOST = process.env.TENSORBOARD_HOST || "127.0.0.1";
-const TB_PORT = process.env.TENSORBOARD_PORT || "6006";
-const TB_PATH_PREFIX = process.env.TENSORBOARD_PATH_PREFIX || "/tensorboard";
+const TB_HOST = process.env.TENSORBOARD_HOST || '127.0.0.1';
+const TB_PORT = process.env.TENSORBOARD_PORT || '6006';
+const TB_PATH_PREFIX = process.env.TENSORBOARD_PATH_PREFIX || '/tensorboard';
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -17,19 +17,19 @@ function isProcessAlive(pid: number): boolean {
 }
 
 function clearTbState(): void {
-  setSetting("tbPid", "");
-  setSetting("tbPort", "");
-  setSetting("tbLogDir", "");
-  setSetting("tbPathPrefix", "");
+  setSetting('tbPid', '');
+  setSetting('tbPort', '');
+  setSetting('tbLogDir', '');
+  setSetting('tbPathPrefix', '');
 }
 
 function killTbProcess(): void {
-  const pidStr = getSetting("tbPid");
+  const pidStr = getSetting('tbPid');
   if (pidStr) {
     const pid = parseInt(pidStr, 10);
     if (!isNaN(pid) && pid > 0 && isProcessAlive(pid)) {
       try {
-        process.kill(pid, "SIGTERM");
+        process.kill(pid, 'SIGTERM');
       } catch {
         /* already dead */
       }
@@ -39,10 +39,10 @@ function killTbProcess(): void {
 }
 
 export async function GET() {
-  const pidStr = getSetting("tbPid");
-  const port = parseInt(getSetting("tbPort") || "0", 10);
-  const logDir = getSetting("tbLogDir") || null;
-  const storedPrefix = getSetting("tbPathPrefix") || "";
+  const pidStr = getSetting('tbPid');
+  const port = parseInt(getSetting('tbPort') || '0', 10);
+  const logDir = getSetting('tbLogDir') || null;
+  const storedPrefix = getSetting('tbPathPrefix') || '';
 
   if (!pidStr || !parseInt(pidStr, 10)) {
     return NextResponse.json({ running: false, port: 0, logDir: null });
@@ -69,42 +69,42 @@ export async function POST(req: Request) {
   const logDir: string = body.logDir;
 
   if (!logDir) {
-    return NextResponse.json({ error: "logDir is required" }, { status: 400 });
+    return NextResponse.json({ error: 'logDir is required' }, { status: 400 });
   }
 
   killTbProcess();
 
   try {
     const child = spawn(
-      "tensorboard",
+      'tensorboard',
       [
-        "--logdir",
+        '--logdir',
         logDir,
-        "--port",
+        '--port',
         String(TB_PORT),
-        "--host",
+        '--host',
         TB_HOST,
-        "--path_prefix",
+        '--path_prefix',
         TB_PATH_PREFIX,
-        "--reload_interval",
-        "5",
+        '--reload_interval',
+        '5',
       ],
       {
         detached: true,
-        stdio: "ignore",
+        stdio: 'ignore',
       },
     );
 
     if (!child.pid) {
-      return NextResponse.json({ error: "Failed to spawn tensorboard process" }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to spawn tensorboard process' }, { status: 500 });
     }
 
     child.unref();
 
-    setSetting("tbPid", String(child.pid));
-    setSetting("tbPort", TB_PORT);
-    setSetting("tbLogDir", logDir);
-    setSetting("tbPathPrefix", TB_PATH_PREFIX);
+    setSetting('tbPid', String(child.pid));
+    setSetting('tbPort', TB_PORT);
+    setSetting('tbLogDir', logDir);
+    setSetting('tbPathPrefix', TB_PATH_PREFIX);
 
     return NextResponse.json({ running: true, port: parseInt(TB_PORT, 10), logDir });
   } catch (err: unknown) {

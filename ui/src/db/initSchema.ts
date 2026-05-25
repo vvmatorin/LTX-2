@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type Database from 'better-sqlite3';
 
 const SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS settings (
@@ -11,8 +11,6 @@ const SCHEMA_SQL = `
     name TEXT NOT NULL,
     media_type TEXT NOT NULL DEFAULT 'videos',
     file_count INTEGER NOT NULL DEFAULT 0,
-    has_dataset_json INTEGER NOT NULL DEFAULT 0,
-    has_audio_json INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS jobs (

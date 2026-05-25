@@ -1,36 +1,36 @@
-@import "tailwindcss";
-@import "../styles/tw-animate.css";
-@import "../styles/shadcn.css";
+@import 'tailwindcss';
+@import '../styles/tw-animate.css';
+@import '../styles/shadcn.css';
 
 @custom-variant dark (&:is(.dark *));
 
 @font-face {
-  font-family: "Google Sans";
-  src: url("/fonts/GoogleSans-Regular.ttf") format("truetype");
+  font-family: 'Google Sans';
+  src: url('/fonts/GoogleSans-Regular.ttf') format('truetype');
   font-style: normal;
   font-weight: 400;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Google Sans";
-  src: url("/fonts/GoogleSans-Medium.ttf") format("truetype");
+  font-family: 'Google Sans';
+  src: url('/fonts/GoogleSans-Medium.ttf') format('truetype');
   font-style: normal;
   font-weight: 500;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Google Sans";
-  src: url("/fonts/GoogleSans-SemiBold.ttf") format("truetype");
+  font-family: 'Google Sans';
+  src: url('/fonts/GoogleSans-SemiBold.ttf') format('truetype');
   font-style: normal;
   font-weight: 600;
   font-display: swap;
 }
 
 @font-face {
-  font-family: "Google Sans";
-  src: url("/fonts/GoogleSans-Bold.ttf") format("truetype");
+  font-family: 'Google Sans';
+  src: url('/fonts/GoogleSans-Bold.ttf') format('truetype');
   font-style: normal;
   font-weight: 700;
   font-display: swap;
@@ -81,7 +81,7 @@
 }
 
 :root {
-  --font-sans: "Google Sans", "Inter", "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
+  --font-sans: 'Google Sans', 'Inter', 'SF Pro Text', 'SF Pro Display', 'Segoe UI', sans-serif;
   --background: oklch(0.15 0.03 258);
   --foreground: oklch(0.97 0.01 258);
   --card: oklch(0.18 0.03 258);
@@ -115,43 +115,8 @@
   --sidebar-border: oklch(0.46 0.03 258 / 30%);
   --sidebar-ring: oklch(0.8 0.16 252 / 65%);
   --shadow-neo-raised: 0 16px 38px oklch(0.08 0.03 258 / 55%), inset 0 1px 0 oklch(1 0 0 / 7%);
-  --shadow-neo-inset:
-    inset 0 1px 0 oklch(1 0 0 / 6%), inset 0 -10px 24px oklch(0.06 0.03 258 / 45%);
+  --shadow-neo-inset: inset 0 1px 0 oklch(1 0 0 / 6%), inset 0 -10px 24px oklch(0.06 0.03 258 / 45%);
   --shadow-glow: 0 0 0 1px oklch(0.82 0.14 252 / 35%), 0 10px 30px oklch(0.73 0.17 252 / 35%);
-}
-
-.dark {
-  --background: oklch(0.12 0.03 258);
-  --foreground: oklch(0.96 0.01 258);
-  --card: oklch(0.165 0.03 258);
-  --card-foreground: oklch(0.96 0.01 258);
-  --popover: oklch(0.17 0.03 258);
-  --popover-foreground: oklch(0.96 0.01 258);
-  --primary: oklch(0.73 0.17 252);
-  --primary-foreground: oklch(0.15 0.03 258);
-  --secondary: oklch(0.25 0.04 258);
-  --secondary-foreground: oklch(0.94 0.01 258);
-  --muted: oklch(0.2 0.03 258);
-  --muted-foreground: oklch(0.78 0.02 258);
-  --accent: oklch(0.67 0.2 294);
-  --accent-foreground: oklch(0.15 0.03 258);
-  --destructive: oklch(0.69 0.22 26);
-  --border: oklch(0.48 0.03 258 / 30%);
-  --input: oklch(0.195 0.03 258);
-  --ring: oklch(0.8 0.16 252 / 65%);
-  --chart-1: oklch(0.76 0.17 256);
-  --chart-2: oklch(0.72 0.2 199);
-  --chart-3: oklch(0.71 0.2 323);
-  --chart-4: oklch(0.79 0.16 146);
-  --chart-5: oklch(0.78 0.19 77);
-  --sidebar: oklch(0.155 0.03 258);
-  --sidebar-foreground: oklch(0.96 0.01 258);
-  --sidebar-primary: oklch(0.73 0.17 252);
-  --sidebar-primary-foreground: oklch(0.15 0.03 258);
-  --sidebar-accent: oklch(0.23 0.04 258);
-  --sidebar-accent-foreground: oklch(0.96 0.01 258);
-  --sidebar-border: oklch(0.46 0.03 258 / 30%);
-  --sidebar-ring: oklch(0.8 0.16 252 / 65%);
 }
 
 @layer base {

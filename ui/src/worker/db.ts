@@ -1,10 +1,10 @@
-import Database from "better-sqlite3";
-import path from "path";
-import fs from "fs";
-import { initSchema } from "@/db/initSchema";
+import Database from 'better-sqlite3';
+import path from 'path';
+import fs from 'fs';
+import { initSchema } from '@/db/initSchema';
 
-const DB_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "ltx-ui.db");
+const DB_DIR = path.join(process.cwd(), 'data');
+const DB_PATH = path.join(DB_DIR, 'ltx-ui.db');
 
 export interface JobRow {
   id: number;
@@ -29,33 +29,29 @@ export function getWorkerDb(): Database.Database {
   if (_db) return _db;
   fs.mkdirSync(DB_DIR, { recursive: true });
   _db = new Database(DB_PATH);
-  _db.pragma("journal_mode = WAL");
-  _db.pragma("busy_timeout = 5000");
+  _db.pragma('journal_mode = WAL');
+  _db.pragma('busy_timeout = 5000');
   initSchema(_db);
   return _db;
 }
 
 export function getSettingSync(key: string): string {
-  const row = getWorkerDb().prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+  const row = getWorkerDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
     | { value: string }
     | undefined;
-  return row?.value || "";
+  return row?.value || '';
 }
 
 export function nowIso(): string {
   return new Date().toISOString();
 }
 
-export function markJobFinished(
-  db: Database.Database,
-  jobId: number,
-  exitCode: number | null,
-): void {
+export function markJobFinished(db: Database.Database, jobId: number, exitCode: number | null): void {
   const success = exitCode === 0;
-  const status = success ? "completed" : "failed";
+  const status = success ? 'completed' : 'failed';
   const error = !success
     ? exitCode === null
-      ? "Process exited unexpectedly"
+      ? 'Process exited unexpectedly'
       : `Process exited with code ${exitCode}`
     : null;
   db.prepare(

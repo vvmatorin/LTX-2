@@ -6,5 +6,5 @@ export function formatDuration(start: string, end?: string | null): string {
   const hrs = Math.floor(mins / 60);
   if (hrs > 0) return `${hrs}h ${mins % 60}m`;
   if (mins > 0) return `${mins}m`;
-  return "<1m";
+  return '<1m';
 }

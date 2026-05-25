@@ -1,22 +1,22 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 export async function parseApiError(res: Response): Promise<string> {
-  const contentType = res.headers.get("content-type") ?? "";
-  if (contentType.includes("application/json")) {
+  const contentType = res.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
     try {
       const json = await res.json();
-      if (typeof json?.error === "string") return json.error;
+      if (typeof json?.error === 'string') return json.error;
       return JSON.stringify(json);
     } catch {
       // fall through
     }
   }
-  return `Server error ${res.status}${res.statusText ? `: ${res.statusText}` : ""}`;
+  return `Server error ${res.status}${res.statusText ? `: ${res.statusText}` : ''}`;
 }
 
 export function parseJobConfig<T = Record<string, unknown>>(raw: string): T | null {

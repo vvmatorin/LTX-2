@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect, useRef } from "react";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
-import { cn } from "@/lib/utils";
+import { useEffect, useRef } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
+import { cn } from '@/lib/utils';
 
 interface Props {
   jobId: number | null;
@@ -12,27 +12,27 @@ interface Props {
 }
 
 const TERMINAL_THEME = {
-  background: "#0d1220",
-  foreground: "#e2e8f0",
-  cursor: "#64748b",
-  cursorAccent: "#0d1220",
-  selectionBackground: "#334155",
-  black: "#1e293b",
-  red: "#f87171",
-  green: "#34d399",
-  yellow: "#fbbf24",
-  blue: "#60a5fa",
-  magenta: "#c084fc",
-  cyan: "#22d3ee",
-  white: "#e2e8f0",
-  brightBlack: "#475569",
-  brightRed: "#fca5a5",
-  brightGreen: "#6ee7b7",
-  brightYellow: "#fcd34d",
-  brightBlue: "#93c5fd",
-  brightMagenta: "#d8b4fe",
-  brightCyan: "#67e8f9",
-  brightWhite: "#f8fafc",
+  background: '#0d1220',
+  foreground: '#e2e8f0',
+  cursor: '#64748b',
+  cursorAccent: '#0d1220',
+  selectionBackground: '#334155',
+  black: '#1e293b',
+  red: '#f87171',
+  green: '#34d399',
+  yellow: '#fbbf24',
+  blue: '#60a5fa',
+  magenta: '#c084fc',
+  cyan: '#22d3ee',
+  white: '#e2e8f0',
+  brightBlack: '#475569',
+  brightRed: '#fca5a5',
+  brightGreen: '#6ee7b7',
+  brightYellow: '#fcd34d',
+  brightBlue: '#93c5fd',
+  brightMagenta: '#d8b4fe',
+  brightCyan: '#67e8f9',
+  brightWhite: '#f8fafc',
 } as const;
 
 export function LogViewer({ jobId, className }: Props) {
@@ -48,7 +48,7 @@ export function LogViewer({ jobId, className }: Props) {
       convertEol: true,
       cursorBlink: false,
       disableStdin: true,
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
       fontSize: 12,
       lineHeight: 1.25,
       scrollback: 10_000,
@@ -91,20 +91,20 @@ export function LogViewer({ jobId, className }: Props) {
     term.clear();
     if (!jobId) return;
 
-    const es = new EventSource(`/api/jobs/${jobId}/logs?mode=sse`);
+    const es = new EventSource(`/api/jobs/${jobId}/logs`);
 
-    es.onmessage = (event) => {
+    es.onmessage = event => {
       let data: unknown;
       try {
         data = JSON.parse(event.data);
       } catch {
         return;
       }
-      if (data === "__DONE__") {
+      if (data === '__DONE__') {
         es.close();
         return;
       }
-      if (typeof data === "string" && data.length > 0) {
+      if (typeof data === 'string' && data.length > 0) {
         term.write(data);
       }
     };
@@ -115,12 +115,8 @@ export function LogViewer({ jobId, className }: Props) {
   }, [jobId]);
 
   return (
-    <div className={cn("surface-neo border-border overflow-hidden rounded-2xl border", className)}>
-      <div
-        ref={containerRef}
-        className="p-2"
-        style={{ background: TERMINAL_THEME.background, height: 360 }}
-      />
+    <div className={cn('surface-neo border-border overflow-hidden rounded-2xl border', className)}>
+      <div ref={containerRef} className="p-2" style={{ background: TERMINAL_THEME.background, height: 360 }} />
     </div>
   );
 }

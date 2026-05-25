@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import type { SourceFolder } from "@/lib/types";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Folder, FileVideo, FileImage, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import type { SourceFolder } from '@/lib/types';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Folder, FileVideo, FileImage, Trash2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface Props {
   folder: SourceFolder;
@@ -16,13 +16,13 @@ interface Props {
 }
 
 export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props) {
-  const Icon = folder.mediaType === "images" ? FileImage : FileVideo;
+  const Icon = folder.mediaType === 'images' ? FileImage : FileVideo;
 
   return (
     <Card
       className={cn(
-        "hover:border-primary/40 cursor-pointer transition-colors",
-        selected && "border-primary ring-primary/30 ring-1",
+        'hover:border-primary/40 cursor-pointer transition-colors',
+        selected && 'border-primary ring-primary/30 ring-1',
       )}
       onClick={onSelect}
     >
@@ -48,7 +48,7 @@ export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props
             size="sm"
             variant="ghost"
             className="text-destructive hover:text-destructive h-7 w-7 shrink-0 p-0"
-            onClick={(e) => {
+            onClick={e => {
               e.stopPropagation();
             }}
             title="Remove folder"

@@ -1,31 +1,22 @@
-import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { jobs, sourceFolders } from "@/db/schema";
-import { nextQueuePosition } from "@/db/queries";
-import { eq, desc, and, type SQL } from "drizzle-orm";
-import { parseJobConfig } from "@/lib/utils";
-import { execFile } from "child_process";
-import { promisify } from "util";
-import path from "path";
-import fs from "fs";
+import { NextResponse } from 'next/server';
+import { db } from '@/db';
+import { jobs, sourceFolders } from '@/db/schema';
+import { nextQueuePosition } from '@/db/queries';
+import { eq, desc, and, type SQL } from 'drizzle-orm';
+import { parseJobConfig } from '@/lib/utils';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import path from 'path';
+import fs from 'fs';
 
 const execFileAsync = promisify(execFile);
 
-async function scanBuckets(
-  folderPath: string,
-  resolution: number,
-): Promise<Array<{ key: string; fileCount: number }>> {
-  const bucketScript = path.resolve(
-    /* turbopackIgnore: true */ process.cwd(),
-    "scripts",
-    "bucket_sizes.py",
-  );
+async function scanBuckets(folderPath: string, resolution: number): Promise<Array<{ key: string; fileCount: number }>> {
+  const bucketScript = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'scripts', 'bucket_sizes.py');
 
-  const { stdout } = await execFileAsync(
-    "python3",
-    [bucketScript, folderPath, "--resolution", String(resolution)],
-    { timeout: 60_000 },
-  );
+  const { stdout } = await execFileAsync('python3', [bucketScript, folderPath, '--resolution', String(resolution)], {
+    timeout: 60_000,
+  });
 
   const result = JSON.parse(stdout) as {
     resolutions: Record<string, Array<{ key: string; fileCount: number }>>;
@@ -36,8 +27,8 @@ async function scanBuckets(
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status");
-  const type = searchParams.get("type");
+  const status = searchParams.get('status');
+  const type = searchParams.get('type');
 
   type JobStatus = (typeof jobs.status.enumValues)[number];
   type JobType = (typeof jobs.type.enumValues)[number];
@@ -53,16 +44,12 @@ export async function GET(req: Request) {
   const rows = query.all();
 
   return NextResponse.json(
-    rows.map((r) => {
+    rows.map(r => {
       const config = parseJobConfig(r.config) ?? {};
       let outputExists: boolean | undefined;
-      if (r.type === "preprocess" && r.status === "completed") {
-        const outputFolderPath = (config as Record<string, unknown>).outputFolderPath as
-          | string
-          | undefined;
-        outputExists = outputFolderPath
-          ? fs.existsSync(path.join(outputFolderPath, ".precomputed"))
-          : false;
+      if (r.type === 'preprocess' && r.status === 'completed') {
+        const outputFolderPath = (config as Record<string, unknown>).outputFolderPath as string | undefined;
+        outputExists = outputFolderPath ? fs.existsSync(path.join(outputFolderPath, '.precomputed')) : false;
       }
       return {
         ...r,
@@ -78,11 +65,11 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
   const config: Record<string, unknown> = { ...((body.config as Record<string, unknown>) || {}) };
 
-  if (body.type === "preprocess" && config.folderId) {
+  if (body.type === 'preprocess' && config.folderId) {
     const folder = db
       .select()
       .from(sourceFolders)
@@ -90,7 +77,7 @@ export async function POST(req: Request) {
       .get();
 
     if (folder) {
-      const datasetFilename = (config.datasetFilename as string) || "dataset.json";
+      const datasetFilename = (config.datasetFilename as string) || 'dataset.json';
 
       const resolution = config.resolution as number;
       const frameCounts = (config.frameCounts as number[]) || [];
@@ -99,7 +86,7 @@ export async function POST(req: Request) {
 
       const frameCount = frameCounts[0];
       if (resolution && frameCount !== undefined) {
-        config.outputFolderPath = path.join(folder.path, "_buckets", `${resolution}_${frameCount}`);
+        config.outputFolderPath = path.join(folder.path, '_buckets', `${resolution}_${frameCount}`);
       }
 
       if (resolution && frameCounts.length > 0) {
@@ -114,16 +101,14 @@ export async function POST(req: Request) {
           }
 
           if (bucketStrings.length > 0) {
-            config.resolutionBuckets = bucketStrings.join(";");
+            config.resolutionBuckets = bucketStrings.join(';');
           }
         } catch (err) {
-          console.error("Bucket scan failed, falling back to square:", err);
+          console.error('Bucket scan failed, falling back to square:', err);
         }
 
         if (!config.resolutionBuckets) {
-          config.resolutionBuckets = frameCounts
-            .map((fc) => `${resolution}x${resolution}x${fc}`)
-            .join(";");
+          config.resolutionBuckets = frameCounts.map(fc => `${resolution}x${resolution}x${fc}`).join(';');
         }
       }
     }
@@ -132,17 +117,14 @@ export async function POST(req: Request) {
   const result = db
     .insert(jobs)
     .values({
-      type: body.type as "preprocess" | "merge" | "training",
+      type: body.type as 'preprocess' | 'merge' | 'training',
       name: body.name as string,
-      status: "queued",
+      status: 'queued',
       config: JSON.stringify(config),
       queuePosition: nextQueuePosition(),
     })
     .returning()
     .get();
 
-  return NextResponse.json(
-    { ...result, config: parseJobConfig(result.config) ?? {} },
-    { status: 201 },
-  );
+  return NextResponse.json({ ...result, config: parseJobConfig(result.config) ?? {} }, { status: 201 });
 }

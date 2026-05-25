@@ -1,27 +1,21 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import type { TrainingConfig, ProcessingJob } from "@/lib/types";
-import { buildDefaultConfig, extractTrainingConfig } from "@/lib/training";
-import { useDatasets } from "@/hooks/useDatasets";
-import { useRuns } from "@/hooks/useRuns";
-import { useSettings } from "@/hooks/useSettings";
-import { apiFetch } from "@/lib/api";
-import { TrainingConfigForm } from "@/components/TrainingConfigForm";
-import { PageHeader } from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Play, Loader2 } from "lucide-react";
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import type { TrainingConfig, ProcessingJob } from '@/lib/types';
+import { buildDefaultConfig, extractTrainingConfig } from '@/lib/training';
+import { useDatasets } from '@/hooks/useDatasets';
+import { useRuns } from '@/hooks/useRuns';
+import { useSettings } from '@/hooks/useSettings';
+import { apiFetch } from '@/lib/api';
+import { TrainingConfigForm } from '@/components/TrainingConfigForm';
+import { PageHeader } from '@/components/PageHeader';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Play, Loader2 } from 'lucide-react';
 
 export default function TrainingPage() {
   return (
@@ -40,13 +34,13 @@ export default function TrainingPage() {
 function TrainingPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const fromJobId = searchParams.get("fromJob");
+  const fromJobId = searchParams.get('fromJob');
 
   const { settings } = useSettings();
   const [config, setConfig] = useState<TrainingConfig | null>(null);
-  const [selectedDataset, setSelectedDataset] = useState<string>("");
-  const [gpuMode, setGpuMode] = useState<"single" | "ddp">("single");
-  const [gpuIds, setGpuIds] = useState("0");
+  const [selectedDataset, setSelectedDataset] = useState<string>('');
+  const [gpuMode, setGpuMode] = useState<'single' | 'ddp'>('single');
+  const [gpuIds, setGpuIds] = useState('0');
   const [startError, setStartError] = useState<string | null>(null);
 
   const { datasets } = useDatasets();
@@ -58,9 +52,9 @@ function TrainingPageInner() {
     if (settings && !config) {
       setConfig(
         buildDefaultConfig(
-          settings.modelPath || "",
-          settings.textEncoderPath || "",
-          settings.outputDir || "/tmp/ltx-training",
+          settings.modelPath || '',
+          settings.textEncoderPath || '',
+          settings.outputDir || '/tmp/ltx-training',
         ),
       );
     }
@@ -72,12 +66,12 @@ function TrainingPageInner() {
     appliedFromJob.current = fromJobId;
 
     apiFetch<ProcessingJob>(`/api/jobs/${fromJobId}`)
-      .then((job) => {
-        if (job.type !== "training") return;
+      .then(job => {
+        if (job.type !== 'training') return;
         const defaults = buildDefaultConfig(
-          settings.modelPath || "",
-          settings.textEncoderPath || "",
-          settings.outputDir || "/tmp/ltx-training",
+          settings.modelPath || '',
+          settings.textEncoderPath || '',
+          settings.outputDir || '/tmp/ltx-training',
         );
         const restored = extractTrainingConfig(job.config as Record<string, unknown>, defaults);
         setConfig(restored.config);
@@ -88,9 +82,9 @@ function TrainingPageInner() {
       .catch(() => {
         setConfig(
           buildDefaultConfig(
-            settings.modelPath || "",
-            settings.textEncoderPath || "",
-            settings.outputDir || "/tmp/ltx-training",
+            settings.modelPath || '',
+            settings.textEncoderPath || '',
+            settings.outputDir || '/tmp/ltx-training',
           ),
         );
       });
@@ -104,11 +98,11 @@ function TrainingPageInner() {
     );
   }
 
-  const activeDataset = selectedDataset || datasets[0]?.name || "";
+  const activeDataset = selectedDataset || datasets[0]?.name || '';
 
   const handleStartTraining = async () => {
     setStartError(null);
-    const outputName = config.outputDir.replace(/\/$/, "").split("/").pop() || "training-run";
+    const outputName = config.outputDir.replace(/\/$/, '').split('/').pop() || 'training-run';
     try {
       await createRun({
         name: outputName,
@@ -117,7 +111,7 @@ function TrainingPageInner() {
         gpuIds,
         datasetName: activeDataset,
       });
-      router.push("/runs");
+      router.push('/runs');
     } catch (err) {
       setStartError(err instanceof Error ? err.message : String(err));
     }
@@ -137,12 +131,12 @@ function TrainingPageInner() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="text-xs">Training Dataset</Label>
-                  <Select value={activeDataset} onValueChange={(v) => v && setSelectedDataset(v)}>
+                  <Select value={activeDataset} onValueChange={v => v && setSelectedDataset(v)}>
                     <SelectTrigger className="w-full text-xs">
                       <SelectValue placeholder="Select a dataset" />
                     </SelectTrigger>
                     <SelectContent>
-                      {datasets.map((ds) => (
+                      {datasets.map(ds => (
                         <SelectItem key={ds.name} value={ds.name}>
                           {ds.name} ({ds.buckets.length} buckets)
                         </SelectItem>
@@ -155,11 +149,11 @@ function TrainingPageInner() {
                   <div className="flex gap-2">
                     <Select
                       value={gpuMode}
-                      onValueChange={(v) => {
+                      onValueChange={v => {
                         if (!v) return;
-                        const mode = v as "single" | "ddp";
+                        const mode = v as 'single' | 'ddp';
                         setGpuMode(mode);
-                        setGpuIds(mode === "single" ? "0" : "0,1");
+                        setGpuIds(mode === 'single' ? '0' : '0,1');
                       }}
                     >
                       <SelectTrigger className="w-[140px] text-xs">
@@ -170,12 +164,12 @@ function TrainingPageInner() {
                         <SelectItem value="ddp">Multi-GPU (DDP)</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Select value={gpuIds} onValueChange={(v) => v && setGpuIds(v)}>
+                    <Select value={gpuIds} onValueChange={v => v && setGpuIds(v)}>
                       <SelectTrigger className="flex-1 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {gpuMode === "single" ? (
+                        {gpuMode === 'single' ? (
                           <>
                             <SelectItem value="0">GPU 0</SelectItem>
                             <SelectItem value="1">GPU 1</SelectItem>
@@ -209,13 +203,13 @@ function TrainingPageInner() {
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Dataset</span>
                 <Badge variant="outline" className="text-[10px]">
-                  {activeDataset || "—"}
+                  {activeDataset || '—'}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Mode</span>
                 <Badge variant="secondary" className="text-[10px]">
-                  {config.model.trainingMode === "full" ? "Full" : "LoRA"}
+                  {config.model.trainingMode === 'full' ? 'Full' : 'LoRA'}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
@@ -236,33 +230,24 @@ function TrainingPageInner() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">GPU</span>
-                <span>{gpuMode === "ddp" ? `DDP (${gpuIds})` : `GPU ${gpuIds}`}</span>
+                <span>{gpuMode === 'ddp' ? `DDP (${gpuIds})` : `GPU ${gpuIds}`}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Audio</span>
-                <Badge
-                  variant={config.trainingStrategy.withAudio ? "default" : "secondary"}
-                  className="text-[10px]"
-                >
-                  {config.trainingStrategy.withAudio ? "Yes" : "No"}
+                <Badge variant={config.trainingStrategy.withAudio ? 'default' : 'secondary'} className="text-[10px]">
+                  {config.trainingStrategy.withAudio ? 'Yes' : 'No'}
                 </Badge>
               </div>
 
               {startError && <p className="text-destructive text-xs">{startError}</p>}
 
-              <Button
-                className="w-full"
-                onClick={handleStartTraining}
-                disabled={isCreating || !activeDataset}
-              >
+              <Button className="w-full" onClick={handleStartTraining} disabled={isCreating || !activeDataset}>
                 <Play className="mr-1.5 h-4 w-4" />
-                {isCreating ? "Starting..." : "Start Training"}
+                {isCreating ? 'Starting...' : 'Start Training'}
               </Button>
 
               {!activeDataset && (
-                <p className="text-muted-foreground text-center text-[10px]">
-                  Select a dataset to enable training
-                </p>
+                <p className="text-muted-foreground text-center text-[10px]">Select a dataset to enable training</p>
               )}
             </CardContent>
           </Card>

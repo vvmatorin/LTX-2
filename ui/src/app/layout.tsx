@@ -1,17 +1,17 @@
-import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
-import "./globals.css";
-import { Providers } from "@/components/Providers";
-import { Sidebar } from "@/components/Sidebar";
+import type { Metadata } from 'next';
+import { Geist_Mono } from 'next/font/google';
+import './globals.css';
+import { Providers } from '@/components/Providers';
+import { Sidebar } from '@/components/Sidebar';
 
 const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: '--font-geist-mono',
+  subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: "LTX Trainer",
-  description: "Training UI for LTX-2 video generation models",
+  title: 'LTX Trainer',
+  description: 'Training UI for LTX-2 video generation models',
 };
 
 export default function RootLayout({
