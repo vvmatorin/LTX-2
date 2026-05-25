@@ -12,7 +12,7 @@ interface Props {
 }
 
 const TERMINAL_THEME = {
-  background: '#0d1220',
+  background: 'rgba(0, 0, 0, 0)',
   foreground: '#e2e8f0',
   cursor: '#64748b',
   cursorAccent: '#0d1220',
@@ -35,10 +35,6 @@ const TERMINAL_THEME = {
   brightWhite: '#f8fafc',
 } as const;
 
-// Module-level cache that survives React unmount/remount cycles. Without this,
-// navigating away from /runs disposes the xterm Terminal and closes the SSE,
-// so coming back forces the server to re-stream the entire log backlog and
-// xterm to re-render every byte — visibly slow on long-running jobs.
 type CachedTerminal = {
   jobId: number;
   term: Terminal;
@@ -82,6 +78,7 @@ function createCache(jobId: number, host: HTMLElement): CachedTerminal {
     scrollback: 10_000,
     theme: TERMINAL_THEME,
     allowProposedApi: true,
+    allowTransparency: true,
   });
 
   const fit = new FitAddon();
@@ -149,11 +146,5 @@ export function LogViewer({ jobId, className }: Props) {
     };
   }, [jobId]);
 
-  return (
-    <div
-      ref={containerRef}
-      className={cn('p-2', className)}
-      style={{ background: TERMINAL_THEME.background, height: 360 }}
-    />
-  );
+  return <div ref={containerRef} className={cn('p-2', className)} style={{ height: 360 }} />;
 }
