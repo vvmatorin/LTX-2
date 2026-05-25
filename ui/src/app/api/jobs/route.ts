@@ -57,12 +57,9 @@ export async function GET(req: Request) {
       let outputExists: boolean | undefined;
       if (r.type === "preprocess" && r.status === "completed") {
         const outputFolderPath = config.outputFolderPath as string | undefined;
-        if (outputFolderPath) {
-          outputExists = fs.existsSync(path.join(outputFolderPath, ".precomputed"));
-        } else {
-          const datasetPath = config.datasetPath as string | undefined;
-          outputExists = datasetPath ? fs.existsSync(datasetPath) : false;
-        }
+        outputExists = outputFolderPath
+          ? fs.existsSync(path.join(outputFolderPath, ".precomputed"))
+          : false;
       }
       return {
         ...r,

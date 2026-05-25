@@ -19,7 +19,7 @@ import { FolderPlus } from "lucide-react";
 export default function DatasetsPage() {
   const { folders, addFolder, removeFolder } = useFolders();
   const { jobs, createJob, refreshJobs } = useJobs();
-  const { datasets, createDataset, buildDataset, deleteDataset, refreshDatasets } = useDatasets();
+  const { datasets, createDataset, deleteDataset, refreshDatasets } = useDatasets();
   const { settings } = useSettings();
 
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
@@ -89,8 +89,7 @@ export default function DatasetsPage() {
     const datasetPath = `${datasetDir}/${name}`;
 
     try {
-      const dataset = await createDataset({ name, path: datasetPath, buckets });
-      await buildDataset(dataset.id);
+      await createDataset({ name, path: datasetPath, buckets });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setBuildError(msg);

@@ -27,16 +27,6 @@ export function useDatasets() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
-    },
-  });
-
-  const buildDataset = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/datasets/${id}/build`, { method: "POST" });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      return res.json();
-    },
-    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
@@ -56,7 +46,6 @@ export function useDatasets() {
     datasets: query.data || [],
     isLoading: query.isLoading,
     createDataset: createDataset.mutateAsync,
-    buildDataset: buildDataset.mutateAsync,
     deleteDataset: deleteDataset.mutateAsync,
     refreshDatasets: query.refetch,
     isRefreshing: query.isFetching,

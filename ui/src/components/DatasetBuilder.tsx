@@ -39,7 +39,6 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
       .map((j) => {
         const cfg = j.config as {
           folderId?: number;
-          folderPath?: string;
           outputFolderPath?: string;
           resolution?: number;
           frameCounts?: number[];
@@ -52,7 +51,7 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           : [];
         return {
           folderName: j.name.split(" / ")[0] || "unknown",
-          folderPath: cfg.outputFolderPath || cfg.folderPath || "",
+          folderPath: cfg.outputFolderPath || "",
           jobId: j.id,
           resolution: cfg.resolution || 0,
           frameCount: (cfg.frameCounts || [0])[0],

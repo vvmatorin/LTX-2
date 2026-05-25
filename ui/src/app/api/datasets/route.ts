@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { trainingDatasets } from "@/db/schema";
+import { jobs, trainingDatasets } from "@/db/schema";
+import { nextQueuePosition } from "@/db/queries";
 import { eq } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
+import type { DatasetBucket } from "@/lib/types";
 
 export async function GET() {
   const rows = db.select().from(trainingDatasets).all();
@@ -26,7 +28,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const missingPaths = (body.buckets as Array<{ folderPath?: string }>)
+  const buckets = body.buckets as DatasetBucket[];
+
+  const missingPaths = buckets
     .map((b) => b.folderPath)
     .filter((p): p is string => !!p && !fs.existsSync(p));
 
@@ -37,15 +41,36 @@ export async function POST(req: Request) {
     );
   }
 
+  const sourceDirs = buckets
+    .map((b) => b.folderPath)
+    .filter((p): p is string => Boolean(p));
+
+  if (sourceDirs.length === 0) {
+    return NextResponse.json(
+      { error: "Dataset has no source buckets with folder paths" },
+      { status: 400 },
+    );
+  }
+
   const result = db
     .insert(trainingDatasets)
     .values({
       name: body.name,
       path: body.path,
-      buckets: JSON.stringify(body.buckets),
+      buckets: JSON.stringify(buckets),
     })
     .returning()
     .get();
+
+  db.insert(jobs)
+    .values({
+      type: "merge",
+      name: `Build: ${result.name}`,
+      status: "queued",
+      config: JSON.stringify({ sourceDirs, destDir: result.path }),
+      queuePosition: nextQueuePosition(),
+    })
+    .run();
 
   return NextResponse.json(
     { ...result, buckets: JSON.parse(result.buckets) },
