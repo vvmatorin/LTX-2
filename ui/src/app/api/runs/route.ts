@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { jobs, trainingDatasets } from "@/db/schema";
 import { nextQueuePosition } from "@/db/queries";
+import { eq } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 import YAML from "yaml";
@@ -19,8 +20,8 @@ export async function POST(req: Request) {
     const dataset = db
       .select()
       .from(trainingDatasets)
-      .all()
-      .find((d) => d.name === body.datasetName);
+      .where(eq(trainingDatasets.name, body.datasetName))
+      .get();
     if (dataset) {
       preprocessedDataRoot = path.join(dataset.path, ".precomputed");
     }

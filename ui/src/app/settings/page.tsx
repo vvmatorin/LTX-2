@@ -51,7 +51,7 @@ export default function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // saveSettings already handles error via react-query
+      /* react-query surfaces the error via isError */
     }
   };
 

@@ -5,9 +5,7 @@ import { useJobs } from "@/hooks/useJobs";
 import { useSSELog } from "@/hooks/useSSELog";
 import { useTensorboard } from "@/hooks/useTensorboard";
 import { formatDuration } from "@/lib/format";
-import { parseLossPoints } from "@/lib/logParsing";
 import { LogViewer } from "@/components/LogViewer";
-import { LossGraph } from "@/components/LossGraph";
 import { JobQueueList } from "@/components/JobQueueList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -44,7 +42,6 @@ export default function RunsPage() {
   );
 
   const { lines: logLines } = useSSELog(activeJob?.id ?? null);
-  const lossPoints = useMemo(() => parseLossPoints(logLines), [logLines]);
   const tb = useTensorboard(activeJob);
 
   const handleStop = async (id: number) => {
@@ -116,20 +113,6 @@ export default function RunsPage() {
                     style={{ width: `${activeJob.progress}%` }}
                   />
                 </div>
-              </div>
-            )}
-
-            {lossPoints.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground">Loss</span>
-                  <span className="text-xs text-muted-foreground tabular-nums ml-auto">
-                    {lossPoints[lossPoints.length - 1].loss.toFixed(4)} @ step{" "}
-                    {lossPoints[lossPoints.length - 1].step}
-                  </span>
-                </div>
-                <LossGraph points={lossPoints} className="h-48" />
               </div>
             )}
 

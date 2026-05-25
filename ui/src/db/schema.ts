@@ -20,7 +20,7 @@ export const jobs = sqliteTable("jobs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   type: text("type", { enum: ["preprocess", "merge", "training"] }).notNull(),
   name: text("name").notNull(),
-  status: text("status", { enum: ["pending", "queued", "running", "completed", "failed", "cancelled"] }).notNull().default("queued"),
+  status: text("status", { enum: ["queued", "running", "completed", "failed", "cancelled"] }).notNull().default("queued"),
   config: text("config").notNull(),
   queuePosition: integer("queue_position").notNull().default(0),
   pid: integer("pid"),

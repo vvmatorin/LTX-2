@@ -1,22 +1,8 @@
 import { NextResponse } from "next/server";
-import { db } from "@/db";
-import { settings } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { getSetting, setSetting } from "@/lib/settings";
 import { spawn } from "child_process";
 
 const TB_PORT = 6006;
-
-function getSetting(key: string): string | null {
-  const row = db.select().from(settings).where(eq(settings.key, key)).get();
-  return row?.value ?? null;
-}
-
-function setSetting(key: string, value: string) {
-  db.insert(settings)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: settings.key, set: { value } })
-    .run();
-}
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -27,6 +13,12 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+function clearTbState(): void {
+  setSetting("tbPid", "");
+  setSetting("tbPort", "");
+  setSetting("tbLogDir", "");
+}
+
 function killTbProcess(): void {
   const pidStr = getSetting("tbPid");
   if (pidStr) {
@@ -35,13 +27,11 @@ function killTbProcess(): void {
       try {
         process.kill(pid, "SIGTERM");
       } catch {
-        // already dead
+        /* already dead */
       }
     }
   }
-  setSetting("tbPid", "");
-  setSetting("tbPort", "");
-  setSetting("tbLogDir", "");
+  clearTbState();
 }
 
 export async function GET() {
@@ -54,12 +44,8 @@ export async function GET() {
   }
 
   const pid = parseInt(pidStr, 10);
-  const running = isProcessAlive(pid);
-
-  if (!running) {
-    setSetting("tbPid", "");
-    setSetting("tbPort", "");
-    setSetting("tbLogDir", "");
+  if (!isProcessAlive(pid)) {
+    clearTbState();
     return NextResponse.json({ running: false, port: 0, logDir: null });
   }
 

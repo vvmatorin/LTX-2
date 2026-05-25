@@ -6,7 +6,8 @@ import { formatDuration } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { X, GraduationCap, Layers, Package } from "lucide-react";
+import { useWorkerStatus } from "@/hooks/useWorkerStatus";
+import { X, GraduationCap, Layers, Package, AlertTriangle } from "lucide-react";
 
 interface Props {
   jobs: ProcessingJob[];
@@ -20,6 +21,9 @@ const TYPE_ICONS = {
 } as const;
 
 export function JobQueueList({ jobs, onCancel }: Props) {
+  const { alive } = useWorkerStatus();
+  const hasQueuedJobs = jobs.some((j) => j.status === "queued" || j.status === "running");
+
   if (jobs.length === 0) {
     return (
       <div className="surface-neo-inset rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -30,6 +34,15 @@ export function JobQueueList({ jobs, onCancel }: Props) {
 
   return (
     <div className="space-y-1.5">
+      {!alive && hasQueuedJobs && (
+        <div className="flex items-center gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-400">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            Worker process is not running — queued jobs will not start.
+            Run <code className="font-mono text-xs bg-yellow-500/10 px-1 rounded">npm run worker</code> or restart with <code className="font-mono text-xs bg-yellow-500/10 px-1 rounded">npm run dev</code>.
+          </span>
+        </div>
+      )}
       {jobs.map((job) => {
         const TypeIcon = TYPE_ICONS[job.type] || Layers;
         const status = JOB_STATUS[job.status];

@@ -34,12 +34,9 @@ export function getWorkerDb(): Database.Database {
 }
 
 export function getSettingSync(key: string): string {
-  const db = new Database(DB_PATH, { readonly: true });
-  db.pragma("busy_timeout = 5000");
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
-  db.close();
+  const row = getWorkerDb()
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
   return row?.value || "";
 }
 

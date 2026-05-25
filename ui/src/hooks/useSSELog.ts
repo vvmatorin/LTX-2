@@ -10,7 +10,6 @@ export function useSSELog(jobId: number | null) {
   const connect = useCallback(() => {
     if (!jobId) return;
 
-    // Close existing connection
     eventSourceRef.current?.close();
 
     const es = new EventSource(`/api/jobs/${jobId}/logs?mode=sse`);

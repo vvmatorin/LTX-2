@@ -9,16 +9,6 @@ export interface SourceFolder {
   createdAt: string;
 }
 
-export interface ProcessingConfig {
-  folderId: number;
-  resolution: number;
-  frameCounts: number[];
-  hFlip: boolean;
-  frameSampling: "uniform" | "head";
-  withAudio: boolean;
-  datasetFilename: string;
-}
-
 export interface ProcessingJob {
   id: number;
   type: "preprocess" | "merge" | "training";

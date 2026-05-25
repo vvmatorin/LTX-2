@@ -1,11 +1,20 @@
 import { processQueue } from "./processQueue";
+import { getWorkerDb } from "./db";
 
 console.log("[worker] LTX-UI job queue worker started");
 
 const POLL_INTERVAL_MS = 1000;
 
+function writeHeartbeat() {
+  const db = getWorkerDb();
+  db.prepare(
+    "INSERT INTO settings (key, value) VALUES ('worker_heartbeat', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+  ).run(new Date().toISOString());
+}
+
 async function tick() {
   try {
+    writeHeartbeat();
     await processQueue();
   } catch (err) {
     console.error("[worker] processQueue error:", err);

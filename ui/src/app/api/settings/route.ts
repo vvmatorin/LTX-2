@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
+import { upsertSettings } from "@/lib/settings";
 
 const DEFAULT_SETTINGS: Record<string, string> = {
   modelPath: "",
@@ -21,13 +22,12 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   const body = await req.json();
+  const pairs: Record<string, string> = {};
   for (const [key, value] of Object.entries(body)) {
     if (typeof value === "string") {
-      db.insert(settings)
-        .values({ key, value })
-        .onConflictDoUpdate({ target: settings.key, set: { value } })
-        .run();
+      pairs[key] = value;
     }
   }
+  upsertSettings(pairs);
   return NextResponse.json({ ok: true });
 }

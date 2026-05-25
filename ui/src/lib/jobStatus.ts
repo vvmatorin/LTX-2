@@ -38,9 +38,4 @@ export const JOB_STATUS: Record<string, StatusStyle> = {
     label: "Cancelled",
     class: "bg-muted text-muted-foreground border-border",
   },
-  pending: {
-    icon: Clock,
-    label: "Pending",
-    class: "bg-muted text-muted-foreground border-border",
-  },
 } as const;

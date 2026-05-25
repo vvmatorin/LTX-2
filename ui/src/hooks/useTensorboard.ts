@@ -59,14 +59,12 @@ export function useTensorboard(activeJob: ProcessingJob | null) {
     }
   }, []);
 
-  // Poll TB status every 3s
   useEffect(() => {
     poll();
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
   }, [poll]);
 
-  // Auto-start when active training job appears; auto-stop when gone
   useEffect(() => {
     if (activeJob && activeJob.type === "training" && activeJob.status === "running") {
       const config = activeJob.config as Record<string, unknown>;

@@ -1,12 +1,12 @@
+import { sql, eq } from "drizzle-orm";
 import { db } from "./index";
 import { jobs } from "./schema";
 
 export function nextQueuePosition(): number {
-  const maxPos = db
-    .select()
+  const row = db
+    .select({ maxPos: sql<number | null>`MAX(${jobs.queuePosition})` })
     .from(jobs)
-    .all()
-    .filter((j) => j.status === "queued")
-    .reduce((max, j) => Math.max(max, j.queuePosition), -1);
-  return maxPos + 1;
+    .where(eq(jobs.status, "queued"))
+    .get();
+  return (row?.maxPos ?? -1) + 1;
 }

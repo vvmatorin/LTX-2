@@ -302,7 +302,6 @@ export function CheckpointsSection({ config, update }: SectionProps) {
   );
 }
 
-
 export function GeneralSection({ config, onChange }: GeneralSectionProps) {
   return (
     <Section title="General" defaultOpen={false}>
