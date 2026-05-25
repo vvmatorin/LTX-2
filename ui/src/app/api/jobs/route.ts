@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { jobs, sourceFolders } from "@/db/schema";
 import { nextQueuePosition } from "@/db/queries";
 import { eq, desc, and, type SQL } from "drizzle-orm";
+import { parseJobConfig } from "@/lib/utils";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import path from "path";
@@ -38,8 +39,8 @@ export async function GET(req: Request) {
   const status = searchParams.get("status");
   const type = searchParams.get("type");
 
-  type JobStatus = typeof jobs.status.enumValues[number];
-  type JobType = typeof jobs.type.enumValues[number];
+  type JobStatus = (typeof jobs.status.enumValues)[number];
+  type JobType = (typeof jobs.type.enumValues)[number];
 
   const conditions: SQL[] = [];
   if (status) conditions.push(eq(jobs.status, status as JobStatus));
@@ -53,10 +54,12 @@ export async function GET(req: Request) {
 
   return NextResponse.json(
     rows.map((r) => {
-      const config = JSON.parse(r.config) as Record<string, unknown>;
+      const config = parseJobConfig(r.config) ?? {};
       let outputExists: boolean | undefined;
       if (r.type === "preprocess" && r.status === "completed") {
-        const outputFolderPath = config.outputFolderPath as string | undefined;
+        const outputFolderPath = (config as Record<string, unknown>).outputFolderPath as
+          | string
+          | undefined;
         outputExists = outputFolderPath
           ? fs.existsSync(path.join(outputFolderPath, ".precomputed"))
           : false;
@@ -71,8 +74,13 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const config: Record<string, unknown> = { ...(body.config || {}) };
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const config: Record<string, unknown> = { ...((body.config as Record<string, unknown>) || {}) };
 
   if (body.type === "preprocess" && config.folderId) {
     const folder = db
@@ -82,8 +90,7 @@ export async function POST(req: Request) {
       .get();
 
     if (folder) {
-      const datasetFilename =
-        (config.datasetFilename as string) || "dataset.json";
+      const datasetFilename = (config.datasetFilename as string) || "dataset.json";
 
       const resolution = config.resolution as number;
       const frameCounts = (config.frameCounts as number[]) || [];
@@ -92,11 +99,7 @@ export async function POST(req: Request) {
 
       const frameCount = frameCounts[0];
       if (resolution && frameCount !== undefined) {
-        config.outputFolderPath = path.join(
-          folder.path,
-          "_buckets",
-          `${resolution}_${frameCount}`,
-        );
+        config.outputFolderPath = path.join(folder.path, "_buckets", `${resolution}_${frameCount}`);
       }
 
       if (resolution && frameCounts.length > 0) {
@@ -129,8 +132,8 @@ export async function POST(req: Request) {
   const result = db
     .insert(jobs)
     .values({
-      type: body.type,
-      name: body.name,
+      type: body.type as "preprocess" | "merge" | "training",
+      name: body.name as string,
       status: "queued",
       config: JSON.stringify(config),
       queuePosition: nextQueuePosition(),
@@ -139,7 +142,7 @@ export async function POST(req: Request) {
     .get();
 
   return NextResponse.json(
-    { ...result, config: JSON.parse(result.config) },
+    { ...result, config: parseJobConfig(result.config) ?? {} },
     { status: 201 },
   );
 }

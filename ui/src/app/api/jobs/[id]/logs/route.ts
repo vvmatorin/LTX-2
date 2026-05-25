@@ -4,10 +4,7 @@ import { jobs } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import fs from "fs";
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
 
@@ -51,9 +48,7 @@ export async function GET(
               fs.closeSync(fd);
               offset = stat.size;
               const lines = buf.toString("utf-8");
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(lines)}\n\n`),
-              );
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(lines)}\n\n`));
             }
           } catch {
             // File may have been removed
@@ -65,19 +60,10 @@ export async function GET(
         pollInterval = setInterval(sendChunk, 200);
 
         doneInterval = setInterval(() => {
-          const currentJob = db
-            .select()
-            .from(jobs)
-            .where(eq(jobs.id, id))
-            .get();
-          if (
-            !currentJob ||
-            ["completed", "failed", "cancelled"].includes(currentJob.status)
-          ) {
+          const currentJob = db.select().from(jobs).where(eq(jobs.id, id)).get();
+          if (!currentJob || ["completed", "failed", "cancelled"].includes(currentJob.status)) {
             sendChunk();
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify("__DONE__")}\n\n`),
-            );
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify("__DONE__")}\n\n`));
             cleanup();
             controller.close();
           }

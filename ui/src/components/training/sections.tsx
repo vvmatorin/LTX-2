@@ -14,10 +14,7 @@ import {
   VideoDimsField,
 } from "./fields";
 
-type UpdateFn = (
-  section: keyof TrainingConfig,
-  patch: Record<string, unknown>,
-) => void;
+type UpdateFn = (section: keyof TrainingConfig, patch: Record<string, unknown>) => void;
 
 interface SectionProps {
   config: TrainingConfig;
@@ -33,17 +30,8 @@ const TARGET_MODULE_PRESETS = [
   {
     id: "full" as const,
     label: "Full",
-    description:
-      "All modules — broad patterns match video, audio & cross-modal",
-    modules: [
-      "to_k",
-      "to_q",
-      "to_v",
-      "to_out.0",
-      "to_gate_logits",
-      "net.0.proj",
-      "net.2",
-    ],
+    description: "All modules — broad patterns match video, audio & cross-modal",
+    modules: ["to_k", "to_q", "to_v", "to_out.0", "to_gate_logits", "net.0.proj", "net.2"],
   },
   {
     id: "video" as const,
@@ -157,9 +145,7 @@ export function LoraSection({ config, update }: SectionProps) {
               type="button"
               size="sm"
               variant={activePreset?.id === preset.id ? "default" : "outline"}
-              onClick={() =>
-                update("lora", { targetModules: [...preset.modules] })
-              }
+              onClick={() => update("lora", { targetModules: [...preset.modules] })}
               title={preset.description}
               className="h-7 px-3 text-xs"
             >
@@ -169,11 +155,7 @@ export function LoraSection({ config, update }: SectionProps) {
         </div>
         <div className="flex flex-wrap gap-1.5">
           {modules.map((mod) => (
-            <Badge
-              key={mod}
-              variant="secondary"
-              className="text-[10px] font-mono"
-            >
+            <Badge key={mod} variant="secondary" className="font-mono text-[10px]">
               {mod}
             </Badge>
           ))}
@@ -190,25 +172,19 @@ export function StrategySection({ config, update }: SectionProps) {
         <NumberField
           label="First Frame Cond. P"
           value={config.trainingStrategy.firstFrameConditioningP}
-          onChange={(v) =>
-            update("trainingStrategy", { firstFrameConditioningP: v })
-          }
+          onChange={(v) => update("trainingStrategy", { firstFrameConditioningP: v })}
           step={0.1}
         />
         <NumberField
           label="Boundary Loss Weight"
           value={config.trainingStrategy.temporalBoundaryLossWeight}
-          onChange={(v) =>
-            update("trainingStrategy", { temporalBoundaryLossWeight: v })
-          }
+          onChange={(v) => update("trainingStrategy", { temporalBoundaryLossWeight: v })}
           step={0.1}
         />
         <NumberField
           label="Boundary Frames"
           value={config.trainingStrategy.temporalBoundaryFrames}
-          onChange={(v) =>
-            update("trainingStrategy", { temporalBoundaryFrames: v })
-          }
+          onChange={(v) => update("trainingStrategy", { temporalBoundaryFrames: v })}
         />
       </div>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
@@ -251,9 +227,7 @@ export function OptimizationSection({ config, update }: SectionProps) {
         <NumberField
           label="Grad Accumulation"
           value={config.optimization.gradientAccumulationSteps}
-          onChange={(v) =>
-            update("optimization", { gradientAccumulationSteps: v })
-          }
+          onChange={(v) => update("optimization", { gradientAccumulationSteps: v })}
         />
         <NumberField
           label="Max Grad Norm"
@@ -297,9 +271,7 @@ export function OptimizationSection({ config, update }: SectionProps) {
       <SwitchField
         label="Gradient Checkpointing"
         checked={config.optimization.enableGradientCheckpointing}
-        onChange={(v) =>
-          update("optimization", { enableGradientCheckpointing: v })
-        }
+        onChange={(v) => update("optimization", { enableGradientCheckpointing: v })}
       />
     </Section>
   );
@@ -318,9 +290,7 @@ export function ValidationSection({ config, update }: SectionProps) {
           />
         </div>
         <div className="space-y-2">
-          <Label className="text-xs">
-            Conditioning Images (one path per line)
-          </Label>
+          <Label className="text-xs">Conditioning Images (one path per line)</Label>
           <ListInput
             value={config.validation.images}
             onChange={(v) => update("validation", { images: v })}
@@ -412,9 +382,7 @@ export function FlowMatchingSection({ config, update }: SectionProps) {
         <SelectField
           label="Timestep Sampling"
           value={config.flowMatching.timestepSamplingMode}
-          onChange={(v) =>
-            update("flowMatching", { timestepSamplingMode: v })
-          }
+          onChange={(v) => update("flowMatching", { timestepSamplingMode: v })}
           options={[
             { value: "uniform", label: "Uniform" },
             { value: "shifted_logit_normal", label: "Shifted Logit Normal" },
@@ -423,9 +391,7 @@ export function FlowMatchingSection({ config, update }: SectionProps) {
         <SelectField
           label="Loss Weighting"
           value={config.flowMatching.timestepLossWeighting}
-          onChange={(v) =>
-            update("flowMatching", { timestepLossWeighting: v })
-          }
+          onChange={(v) => update("flowMatching", { timestepLossWeighting: v })}
           options={[
             { value: "none", label: "None" },
             { value: "bell", label: "Bell" },

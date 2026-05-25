@@ -9,7 +9,7 @@ export function EmptyState({ children, className }: Props) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground",
+        "border-border text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm",
         className,
       )}
     >

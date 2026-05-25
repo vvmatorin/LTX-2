@@ -48,8 +48,7 @@ export function LogViewer({ jobId, className }: Props) {
       convertEol: true,
       cursorBlink: false,
       disableStdin: true,
-      fontFamily:
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
       fontSize: 12,
       lineHeight: 1.25,
       scrollback: 10_000,
@@ -95,7 +94,12 @@ export function LogViewer({ jobId, className }: Props) {
     const es = new EventSource(`/api/jobs/${jobId}/logs?mode=sse`);
 
     es.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      let data: unknown;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
       if (data === "__DONE__") {
         es.close();
         return;
@@ -111,12 +115,7 @@ export function LogViewer({ jobId, className }: Props) {
   }, [jobId]);
 
   return (
-    <div
-      className={cn(
-        "surface-neo overflow-hidden rounded-2xl border border-border",
-        className,
-      )}
-    >
+    <div className={cn("surface-neo border-border overflow-hidden rounded-2xl border", className)}>
       <div
         ref={containerRef}
         className="p-2"

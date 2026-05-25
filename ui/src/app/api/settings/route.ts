@@ -21,7 +21,12 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const pairs: Record<string, string> = {};
   for (const [key, value] of Object.entries(body)) {
     if (typeof value === "string") {

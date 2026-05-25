@@ -1,9 +1,6 @@
 import { parseApiError } from "./utils";
 
-export async function apiFetch<T>(
-  url: string,
-  init?: RequestInit,
-): Promise<T> {
+export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) throw new Error(await parseApiError(res));
   return res.json();

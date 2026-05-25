@@ -30,16 +30,13 @@ export function Section({
 
   return (
     <Card>
-      <Collapsible open={open}>
-        <CardHeader
-          className="cursor-pointer select-none py-3"
-          onClick={() => setOpen(!open)}
-        >
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CardHeader className="cursor-pointer py-3 select-none" onClick={() => setOpen(!open)}>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg font-semibold">{title}</CardTitle>
             <ChevronDown
               className={cn(
-                "h-4 w-4 text-muted-foreground transition-transform",
+                "text-muted-foreground h-4 w-4 transition-transform",
                 open && "rotate-180",
               )}
             />
@@ -73,7 +70,11 @@ export function NumberField({
         type="number"
         step={step}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "" || raw === "-") return;
+          onChange(Number(raw));
+        }}
         className={cn("text-xs", mono && "font-mono")}
       />
     </div>
@@ -120,7 +121,12 @@ export function SelectField({
   return (
     <div className="space-y-2">
       <Label className="text-xs">{label}</Label>
-      <Select value={value} onValueChange={(v) => { if (v) onChange(v); }}>
+      <Select
+        value={value}
+        onValueChange={(v) => {
+          if (v) onChange(v);
+        }}
+      >
         <SelectTrigger className="w-full text-xs">
           <SelectValue />
         </SelectTrigger>
@@ -165,7 +171,10 @@ export function ListInput({
   return (
     <Textarea
       value={value.join("\n")}
-      onChange={(e) => onChange(e.target.value.split("\n"))}
+      onChange={(e) => {
+        const lines = e.target.value.split("\n").filter((s) => s.trim() !== "");
+        onChange(lines);
+      }}
       placeholder={placeholder}
       rows={3}
       className="text-xs"

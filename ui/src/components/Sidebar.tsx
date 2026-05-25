@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  Database,
-  GraduationCap,
-  Play,
-  Settings,
-  Layers,
-  type LucideIcon,
-} from "lucide-react";
+import { Database, GraduationCap, Play, Settings, Layers, type LucideIcon } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/datasets", label: "Datasets", icon: Database },
@@ -49,14 +42,16 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="relative z-10 flex h-full w-[15.5rem] flex-col rounded-r-3xl border-r border-sidebar-border bg-sidebar p-2 shadow-[12px_0_30px_oklch(0.08_0.03_258_/_0.52)]">
+    <aside className="border-sidebar-border bg-sidebar relative z-10 flex h-full w-[15.5rem] flex-col rounded-r-3xl border-r p-2 shadow-[12px_0_30px_oklch(0.08_0.03_258_/_0.52)]">
       <div className="surface-neo flex items-center gap-2.5 rounded-2xl px-4 py-4">
-        <div className="ring-glow flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
-          <Layers className="h-4 w-4 text-primary-foreground" />
+        <div className="ring-glow bg-primary flex h-9 w-9 items-center justify-center rounded-xl">
+          <Layers className="text-primary-foreground h-4 w-4" />
         </div>
         <div>
-          <h1 className="title-gradient text-lg font-bold leading-none tracking-tight">LTX Trainer</h1>
-          <p className="mt-1 text-[0.78rem] text-sidebar-foreground/78">Training UI</p>
+          <h1 className="title-gradient text-lg leading-none font-bold tracking-tight">
+            LTX Trainer
+          </h1>
+          <p className="text-sidebar-foreground/78 mt-1 text-[0.78rem]">Training UI</p>
         </div>
       </div>
 
@@ -72,7 +67,7 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-sidebar-border px-1 py-3">
+      <div className="border-sidebar-border border-t px-1 py-3">
         <NavLink
           href="/settings"
           icon={Settings}

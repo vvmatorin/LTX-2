@@ -7,21 +7,14 @@ import { useTensorboard } from "@/hooks/useTensorboard";
 import { formatDuration } from "@/lib/format";
 import { LogViewer } from "@/components/LogViewer";
 import { JobQueueList } from "@/components/JobQueueList";
+import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import {
-  Loader2,
-  Square,
-  ChevronDown,
-  Clock,
-  Activity,
-  BarChart3,
-  X,
-} from "lucide-react";
+import { Loader2, Square, ChevronDown, Clock, Activity, BarChart3, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function RunsPage() {
@@ -31,15 +24,9 @@ export default function RunsPage() {
   const [tbFullscreen, setTbFullscreen] = useState(false);
 
   const activeJob = jobs.find((j) => j.status === "running") ?? null;
-  const queuedJobs = useMemo(
-    () => jobs.filter((j) => j.status === "queued"),
-    [jobs],
-  );
+  const queuedJobs = useMemo(() => jobs.filter((j) => j.status === "queued"), [jobs]);
   const historyJobs = useMemo(
-    () =>
-      jobs.filter((j) =>
-        ["completed", "failed", "cancelled"].includes(j.status),
-      ),
+    () => jobs.filter((j) => ["completed", "failed", "cancelled"].includes(j.status)),
     [jobs],
   );
 
@@ -53,18 +40,14 @@ export default function RunsPage() {
     }
   };
 
-  const elapsedDisplay = activeJob?.startedAt
-    ? formatDuration(activeJob.startedAt)
-    : null;
+  const elapsedDisplay = activeJob?.startedAt ? formatDuration(activeJob.startedAt) : null;
 
   return (
     <div className="space-y-6 p-3 md:p-4">
-      <div>
-        <h1 className="title-gradient page-title">Runs</h1>
-        <p className="page-subtitle mt-2.5">
-          Monitor active jobs, manage the queue, and review history
-        </p>
-      </div>
+      <PageHeader
+        title="Runs"
+        subtitle="Monitor active jobs, manage the queue, and review history"
+      />
 
       {activeJob ? (
         <Card className="ring-glow border-blue-400/30">
@@ -72,16 +55,19 @@ export default function RunsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="surface-neo-inset flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/10">
-                  <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
                 </div>
                 <div>
                   <CardTitle className="text-sm">{activeJob.name}</CardTitle>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-400 border-blue-500/30">
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="border-blue-500/30 bg-blue-500/10 text-[10px] text-blue-400"
+                    >
                       {activeJob.type}
                     </Badge>
                     {elapsedDisplay && (
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <span className="text-muted-foreground flex items-center gap-1 text-[10px]">
                         <Clock className="h-3 w-3" />
                         {elapsedDisplay}
                       </span>
@@ -122,11 +108,11 @@ export default function RunsPage() {
           <CardContent className="space-y-4">
             {activeJob.progress != null && (
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="text-muted-foreground flex items-center justify-between text-xs">
                   <span>Progress</span>
                   <span className="tabular-nums">{activeJob.progress}%</span>
                 </div>
-                <div className="surface-neo-inset h-2 w-full rounded-full bg-muted">
+                <div className="surface-neo-inset bg-muted h-2 w-full rounded-full">
                   <div
                     className="h-full rounded-full bg-blue-500 transition-all duration-500"
                     style={{ width: `${activeJob.progress}%` }}
@@ -140,12 +126,12 @@ export default function RunsPage() {
         </Card>
       ) : (
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <div className="surface-neo-inset mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted/50">
+          <CardContent className="text-muted-foreground flex flex-col items-center justify-center py-12">
+            <div className="surface-neo-inset bg-muted/50 mb-3 flex h-12 w-12 items-center justify-center rounded-full">
               <Activity className="h-5 w-5" />
             </div>
             <p className="text-sm font-medium">No active job</p>
-            <p className="text-xs mt-1">
+            <p className="mt-1 text-xs">
               {queuedJobs.length > 0
                 ? `${queuedJobs.length} job${queuedJobs.length !== 1 ? "s" : ""} in queue`
                 : "Queue a preprocessing or training job to get started"}
@@ -156,9 +142,7 @@ export default function RunsPage() {
 
       {queuedJobs.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Queue ({queuedJobs.length})
-          </h2>
+          <h2 className="text-muted-foreground text-sm font-medium">Queue ({queuedJobs.length})</h2>
           <JobQueueList jobs={queuedJobs} onCancel={handleStop} />
         </div>
       )}
@@ -171,12 +155,12 @@ export default function RunsPage() {
           className="flex w-full items-center justify-between py-1"
           onClick={() => setHistoryOpen(!historyOpen)}
         >
-          <h2 className="text-sm font-medium text-muted-foreground">
+          <h2 className="text-muted-foreground text-sm font-medium">
             History ({historyJobs.length})
           </h2>
           <ChevronDown
             className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform",
+              "text-muted-foreground h-4 w-4 transition-transform",
               historyOpen && "rotate-180",
             )}
           />
@@ -190,8 +174,8 @@ export default function RunsPage() {
       </Collapsible>
 
       {tbFullscreen && (
-        <div className="fixed inset-0 z-50 bg-background flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2 border-b">
+        <div className="bg-background fixed inset-0 z-50 flex flex-col">
+          <div className="flex items-center justify-between border-b px-4 py-2">
             <span className="text-sm font-medium">TensorBoard</span>
             <Button variant="ghost" size="sm" onClick={() => setTbFullscreen(false)}>
               <X className="h-4 w-4" />
@@ -200,12 +184,12 @@ export default function RunsPage() {
           {tb.ready ? (
             <iframe
               src="/tensorboard/"
-              className="flex-1 w-full border-0"
+              className="w-full flex-1 border-0"
               title="TensorBoard Fullscreen"
             />
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
             </div>
           )}
         </div>

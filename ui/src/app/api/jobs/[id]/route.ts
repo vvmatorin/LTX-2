@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { jobs } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { parseJobConfig } from "@/lib/utils";
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
 
@@ -17,6 +15,6 @@ export async function GET(
 
   return NextResponse.json({
     ...job,
-    config: JSON.parse(job.config),
+    config: parseJobConfig(job.config) ?? {},
   });
 }

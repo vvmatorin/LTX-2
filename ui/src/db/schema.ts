@@ -9,18 +9,24 @@ export const sourceFolders = sqliteTable("source_folders", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   path: text("path").notNull().unique(),
   name: text("name").notNull(),
-  mediaType: text("media_type", { enum: ["images", "videos", "mixed"] }).notNull().default("videos"),
+  mediaType: text("media_type", { enum: ["images", "videos", "mixed"] })
+    .notNull()
+    .default("videos"),
   fileCount: integer("file_count").notNull().default(0),
   hasDatasetJson: integer("has_dataset_json", { mode: "boolean" }).notNull().default(false),
   hasAudioJson: integer("has_audio_json", { mode: "boolean" }).notNull().default(false),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
 });
 
 export const jobs = sqliteTable("jobs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   type: text("type", { enum: ["preprocess", "merge", "training"] }).notNull(),
   name: text("name").notNull(),
-  status: text("status", { enum: ["queued", "running", "completed", "failed", "cancelled"] }).notNull().default("queued"),
+  status: text("status", { enum: ["queued", "running", "completed", "failed", "cancelled"] })
+    .notNull()
+    .default("queued"),
   config: text("config").notNull(),
   queuePosition: integer("queue_position").notNull().default(0),
   pid: integer("pid"),
@@ -30,7 +36,9 @@ export const jobs = sqliteTable("jobs", {
   error: text("error"),
   startedAt: text("started_at"),
   completedAt: text("completed_at"),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
 });
 
 export const trainingDatasets = sqliteTable("training_datasets", {
@@ -38,7 +46,9 @@ export const trainingDatasets = sqliteTable("training_datasets", {
   name: text("name").notNull().unique(),
   path: text("path").notNull(),
   buckets: text("buckets").notNull(),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
 });
 
 export type SourceFolder = typeof sourceFolders.$inferSelect;

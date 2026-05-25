@@ -20,11 +20,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistMono.variable} dark h-full antialiased`}
-    >
-      <body className="h-full bg-background text-foreground">
+    <html lang="en" className={`${geistMono.variable} dark h-full antialiased`}>
+      <body className="bg-background text-foreground h-full">
         <Providers>
           <div className="relative flex h-full overflow-hidden">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_8%,oklch(0.7_0.19_235_/_0.18),transparent_35%),radial-gradient(circle_at_0%_0%,oklch(0.68_0.2_294_/_0.2),transparent_30%)]" />

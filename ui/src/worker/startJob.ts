@@ -6,17 +6,12 @@ import { getWorkerDb, getSettingSync, nowIso, markJobFinished, type JobRow } fro
 export async function startJob(job: JobRow): Promise<number> {
   const config = JSON.parse(job.config);
 
-  const logFile =
-    job.log_file ||
-    path.join(process.cwd(), "data", "logs", `job_${job.id}.log`);
+  const logFile = job.log_file || path.join(process.cwd(), "data", "logs", `job_${job.id}.log`);
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
 
   if (!job.log_file) {
     const db = getWorkerDb();
-    db.prepare("UPDATE jobs SET log_file = ? WHERE id = ?").run(
-      logFile,
-      job.id,
-    );
+    db.prepare("UPDATE jobs SET log_file = ? WHERE id = ?").run(logFile, job.id);
   }
 
   const logFd = fs.openSync(logFile, "a");
@@ -32,8 +27,7 @@ export async function startJob(job: JobRow): Promise<number> {
     COLORTERM: "truecolor",
   };
 
-  const scriptsDir =
-    getSettingSync("scriptsDir") || (config.scriptsDir as string) || "";
+  const scriptsDir = getSettingSync("scriptsDir") || (config.scriptsDir as string) || "";
 
   if (job.type === "preprocess") {
     command = "python3";
@@ -110,12 +104,16 @@ export async function startJob(job: JobRow): Promise<number> {
           fs.renameSync(precomputedSrc, precomputedDest);
           try {
             fs.writeSync(logFd, `[${nowIso()}] Moved .precomputed → ${precomputedDest}\n`);
-          } catch { /* log fd may already be closed on retry */ }
+          } catch {
+            /* log fd may already be closed on retry */
+          }
         }
       } catch (err) {
         try {
           fs.writeSync(logFd, `[${nowIso()}] WARNING: could not move .precomputed: ${err}\n`);
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
     }
 
@@ -132,10 +130,7 @@ export async function startJob(job: JobRow): Promise<number> {
   return child.pid;
 }
 
-function buildPreprocessArgs(
-  config: Record<string, unknown>,
-  scriptsDir: string,
-): string[] {
+function buildPreprocessArgs(config: Record<string, unknown>, scriptsDir: string): string[] {
   const script = path.join(scriptsDir, "process_dataset.py");
   const args = [script];
 
@@ -146,27 +141,20 @@ function buildPreprocessArgs(
     args.push("--resolution-buckets", config.resolutionBuckets as string);
   }
 
-  const modelPath =
-    (config.modelPath as string) || getSettingSync("modelPath");
+  const modelPath = (config.modelPath as string) || getSettingSync("modelPath");
   if (modelPath) args.push("--model-path", modelPath);
 
-  const textEncoderPath =
-    (config.textEncoderPath as string) || getSettingSync("textEncoderPath");
+  const textEncoderPath = (config.textEncoderPath as string) || getSettingSync("textEncoderPath");
   if (textEncoderPath) args.push("--text-encoder-path", textEncoderPath);
 
   if (config.hFlip) args.push("--with-h-flip");
   if (config.withAudio) args.push("--with-audio");
-  if (config.frameSampling)
-    args.push("--frame-sampling", config.frameSampling as string);
+  if (config.frameSampling) args.push("--frame-sampling", config.frameSampling as string);
 
   return args;
 }
 
-function handleMergeJob(
-  jobId: number,
-  config: Record<string, unknown>,
-  logFd: number,
-): number {
+function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: number): number {
   const db = getWorkerDb();
   const sourceDirs = (config.sourceDirs as string[]) || [];
   const destDir = (config.destDir as string) || "";
@@ -178,12 +166,7 @@ function handleMergeJob(
       const pre = path.join(src, ".precomputed");
       const tag = path.basename(src);
 
-      for (const subdir of [
-        "latents",
-        "latents_h_flip",
-        "conditions",
-        "audio_latents",
-      ]) {
+      for (const subdir of ["latents", "latents_h_flip", "conditions", "audio_latents"]) {
         const srcDir = path.join(pre, subdir);
         if (!fs.existsSync(srcDir)) continue;
 
@@ -203,9 +186,11 @@ function handleMergeJob(
     const msg = err instanceof Error ? err.message : String(err);
     fs.writeSync(logFd, `[${nowIso()}] ERROR: ${msg}\n`);
 
-    db.prepare(
-      "UPDATE jobs SET status = 'failed', error = ?, completed_at = ? WHERE id = ?",
-    ).run(msg, nowIso(), jobId);
+    db.prepare("UPDATE jobs SET status = 'failed', error = ?, completed_at = ? WHERE id = ?").run(
+      msg,
+      nowIso(),
+      jobId,
+    );
   }
 
   fs.closeSync(logFd);
@@ -224,4 +209,3 @@ function hardLinkRecursive(src: string, dest: string) {
     }
   }
 }
-

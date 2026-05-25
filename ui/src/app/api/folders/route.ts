@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { sourceFolders } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { safeId } from "@/lib/utils";
 import fs from "fs";
 import path from "path";
 
@@ -42,15 +43,20 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const folderPath: string = body.path;
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const folderPath = body.path as string | undefined;
 
   if (!folderPath) {
     return NextResponse.json({ error: "path is required" }, { status: 400 });
   }
 
   const parts = folderPath.split("/").filter(Boolean);
-  const name = body.name || parts[parts.length - 1] || "folder";
+  const name = (body.name as string) || parts[parts.length - 1] || "folder";
 
   const meta = scanFolderMeta(folderPath);
 
@@ -72,7 +78,7 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
-  const id = Number(searchParams.get("id"));
+  const id = safeId(searchParams.get("id"));
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }

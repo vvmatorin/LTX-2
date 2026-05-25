@@ -18,15 +18,15 @@ interface Props {
 }
 
 export function TrainingConfigForm({ config, onChange }: Props) {
-  const update = (
-    section: keyof TrainingConfig,
-    patch: Record<string, unknown>,
+  const update = <K extends keyof TrainingConfig>(
+    section: K,
+    patch: Partial<TrainingConfig[K] & Record<string, unknown>>,
   ) => {
     const current = config[section];
     if (typeof current === "object" && current !== null) {
       onChange({
         ...config,
-        [section]: { ...current, ...patch },
+        [section]: { ...(current as object), ...patch },
       });
     }
   };

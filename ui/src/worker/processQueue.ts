@@ -17,14 +17,12 @@ function readExitCode(logFile: string | null): number | null {
 export async function processQueue(): Promise<void> {
   const sqlite = getWorkerDb();
 
-  const running = sqlite
-    .prepare("SELECT id FROM jobs WHERE status = 'running' LIMIT 1")
-    .get() as { id: number } | undefined;
+  const running = sqlite.prepare("SELECT id FROM jobs WHERE status = 'running' LIMIT 1").get() as
+    | { id: number }
+    | undefined;
 
   if (running) {
-    const job = sqlite
-      .prepare("SELECT * FROM jobs WHERE id = ?")
-      .get(running.id) as JobRow;
+    const job = sqlite.prepare("SELECT * FROM jobs WHERE id = ?").get(running.id) as JobRow;
 
     if (job.pid && job.pid > 0) {
       let processAlive = true;
@@ -59,9 +57,7 @@ export async function processQueue(): Promise<void> {
   }
 
   const next = sqlite
-    .prepare(
-      "SELECT * FROM jobs WHERE status = 'queued' ORDER BY queue_position ASC LIMIT 1",
-    )
+    .prepare("SELECT * FROM jobs WHERE status = 'queued' ORDER BY queue_position ASC LIMIT 1")
     .get() as JobRow | undefined;
 
   if (!next) return;
@@ -74,17 +70,13 @@ export async function processQueue(): Promise<void> {
 
   try {
     const pid = await startJob(next);
-    sqlite
-      .prepare("UPDATE jobs SET pid = ? WHERE id = ?")
-      .run(pid, next.id);
+    sqlite.prepare("UPDATE jobs SET pid = ? WHERE id = ?").run(pid, next.id);
     console.log(`[worker] Job ${next.id} started with pid ${pid}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[worker] Failed to start job ${next.id}:`, message);
     sqlite
-      .prepare(
-        "UPDATE jobs SET status = 'failed', error = ?, completed_at = ? WHERE id = ?",
-      )
+      .prepare("UPDATE jobs SET status = 'failed', error = ?, completed_at = ? WHERE id = ?")
       .run(message, nowIso(), next.id);
   }
 }

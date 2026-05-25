@@ -41,12 +41,15 @@ export PATH="$VIRTUAL_ENV/bin:$PATH"
 command -v node &>/dev/null || die "Node.js not found. Install Node 20+ and retry."
 command -v npm  &>/dev/null || die "npm not found."
 
-if [[ ! -d "$SCRIPT_DIR/ui/node_modules" ]]; then
-    info "Installing npm dependencies..."
-    (cd "$SCRIPT_DIR/ui" && npm install)
-fi
-
 # ── 3. Launch UI (Next.js + worker via concurrently) ───────────────────────
 info "Launching UI on http://localhost:${PORT}  (TensorBoard at ${TENSORBOARD_PATH_PREFIX}/)"
 cd "$SCRIPT_DIR/ui"
-exec npm run dev
+
+if [[ "${1:-}" == "--dev" ]]; then
+    info "Running in development mode (hot-reload)..."
+    [[ -d node_modules ]] || npm install
+    exec npm run dev
+else
+    info "Running production build..."
+    exec npm run build_and_start
+fi

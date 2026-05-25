@@ -1,7 +1,4 @@
-export function formatDuration(
-  start: string,
-  end?: string | null,
-): string {
+export function formatDuration(start: string, end?: string | null): string {
   const startMs = new Date(start).getTime();
   const endMs = end ? new Date(end).getTime() : Date.now();
   const diffMs = endMs - startMs;

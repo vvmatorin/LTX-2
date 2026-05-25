@@ -21,16 +21,18 @@ export function useJobs() {
   });
 
   const createJob = useMutation({
-    mutationFn: (job: { type: string; name: string; config: Record<string, unknown> }) =>
-      apiPost<ProcessingJob>("/api/jobs", job),
+    mutationFn: (job: {
+      type: ProcessingJob["type"];
+      name: string;
+      config: Record<string, unknown>;
+    }) => apiPost<ProcessingJob>("/api/jobs", job),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
 
   const stopJob = useMutation({
-    mutationFn: (id: number) =>
-      apiPost<{ ok: boolean }>(`/api/jobs/${id}/stop`, {}),
+    mutationFn: (id: number) => apiPost<{ ok: boolean }>(`/api/jobs/${id}/stop`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },

@@ -36,9 +36,9 @@ export function getWorkerDb(): Database.Database {
 }
 
 export function getSettingSync(key: string): string {
-  const row = getWorkerDb()
-    .prepare("SELECT value FROM settings WHERE key = ?")
-    .get(key) as { value: string } | undefined;
+  const row = getWorkerDb().prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
   return row?.value || "";
 }
 

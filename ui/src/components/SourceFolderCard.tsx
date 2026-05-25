@@ -21,19 +21,17 @@ export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props
   return (
     <Card
       className={cn(
-        "cursor-pointer transition-colors hover:border-primary/40",
-        selected && "border-primary ring-1 ring-primary/30",
+        "hover:border-primary/40 cursor-pointer transition-colors",
+        selected && "border-primary ring-primary/30 ring-1",
       )}
       onClick={onSelect}
     >
       <CardContent className="flex items-center gap-3 px-4 py-2.5">
-        <div className="rounded-md bg-muted p-1.5">
-          <Folder className="h-4 w-4 text-muted-foreground" />
+        <div className="bg-muted rounded-md p-1.5">
+          <Folder className="text-muted-foreground h-4 w-4" />
         </div>
 
-        <h3 className="min-w-0 flex-1 break-all text-sm font-medium font-mono">
-          {folder.path}
-        </h3>
+        <h3 className="min-w-0 flex-1 font-mono text-sm font-medium break-all">{folder.path}</h3>
 
         <Badge variant="secondary" className="shrink-0 text-[10px]">
           <Icon className="mr-1 h-3 w-3" />
@@ -49,8 +47,10 @@ export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 w-7 p-0 text-destructive hover:text-destructive shrink-0"
-            onClick={(e) => { e.stopPropagation(); }}
+            className="text-destructive hover:text-destructive h-7 w-7 shrink-0 p-0"
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
             title="Remove folder"
           >
             <Trash2 className="h-3.5 w-3.5" />

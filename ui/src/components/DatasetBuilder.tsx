@@ -10,7 +10,17 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
-import { Package, Plus, CheckCircle2, Square, CheckSquare, Trash2, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
+import {
+  Package,
+  Plus,
+  CheckCircle2,
+  Square,
+  CheckSquare,
+  Trash2,
+  AlertTriangle,
+  RefreshCw,
+  Loader2,
+} from "lucide-react";
 
 interface Props {
   completedJobs: ProcessingJob[];
@@ -21,7 +31,14 @@ interface Props {
   isRefreshing?: boolean;
 }
 
-export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDeleteDataset, onRefresh, isRefreshing }: Props) {
+export function DatasetBuilder({
+  completedJobs,
+  datasets,
+  onBuildDataset,
+  onDeleteDataset,
+  onRefresh,
+  isRefreshing,
+}: Props) {
   const [datasetName, setDatasetName] = useState("");
   const [selectedJobIds, setSelectedJobIds] = useState<Set<number>>(new Set());
 
@@ -48,9 +65,7 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           hFlip?: boolean;
           resolutionBuckets?: string;
         };
-        const bucketKeys = cfg.resolutionBuckets
-          ? cfg.resolutionBuckets.split(";")
-          : [];
+        const bucketKeys = cfg.resolutionBuckets ? cfg.resolutionBuckets.split(";") : [];
         const folderPath = cfg.outputFolderPath || "";
         return {
           folderName: folderPath.split("/").filter(Boolean).pop() || "unknown",
@@ -76,7 +91,7 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
     <div className="space-y-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+          <Label className="text-muted-foreground text-xs tracking-wider uppercase">
             Existing Training Datasets
           </Label>
           <Button
@@ -94,68 +109,68 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           <EmptyState className="p-4">No training datasets yet.</EmptyState>
         ) : (
           <>
-          {datasets.map((ds) => {
-            const isBuilding = ds.buildStatus === "queued" || ds.buildStatus === "running";
-            const isMissing = !isBuilding && !ds.pathExists;
-            return (
-            <Card
-              key={ds.id}
-              className={cn(
-                "bg-muted/30",
-                isMissing && "border-destructive/30 bg-destructive/5",
-                isBuilding && "border-blue-500/30 bg-blue-500/5",
-              )}
-            >
-              <CardContent className="flex items-center gap-3 p-3">
-                {isBuilding ? (
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
-                ) : (
-                  <Package
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      ds.pathExists ? "text-emerald-400" : "text-destructive/70",
-                    )}
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{ds.name}</span>
-                    {isBuilding && (
-                      <span className="text-[10px] text-blue-400">
-                        {ds.buildStatus === "running" ? "building…" : "queued…"}
-                      </span>
-                    )}
-                    {isMissing && (
-                      <span className="flex items-center gap-1 text-[10px] text-destructive">
-                        <AlertTriangle className="h-3 w-3" />
-                        path missing
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground font-mono break-all">{ds.path}</p>
-                </div>
-                <Badge variant="secondary" className="text-[10px] shrink-0">
-                  {ds.buckets.length} bucket{ds.buckets.length !== 1 ? "s" : ""}
-                </Badge>
-                <ConfirmDialog
-                  title="Delete dataset?"
-                  description={`This will remove the "${ds.name}" dataset record. The files on disk will not be deleted.`}
-                  confirmLabel="Delete"
-                  onConfirm={() => onDeleteDataset(ds.id)}
+            {datasets.map((ds) => {
+              const isBuilding = ds.buildStatus === "queued" || ds.buildStatus === "running";
+              const isMissing = !isBuilding && !ds.pathExists;
+              return (
+                <Card
+                  key={ds.id}
+                  className={cn(
+                    "bg-muted/30",
+                    isMissing && "border-destructive/30 bg-destructive/5",
+                    isBuilding && "border-blue-500/30 bg-blue-500/5",
+                  )}
                 >
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                    title="Delete dataset record"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </ConfirmDialog>
-              </CardContent>
-            </Card>
-          );
-          })}
+                  <CardContent className="flex items-center gap-3 p-3">
+                    {isBuilding ? (
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
+                    ) : (
+                      <Package
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          ds.pathExists ? "text-emerald-400" : "text-destructive/70",
+                        )}
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">{ds.name}</span>
+                        {isBuilding && (
+                          <span className="text-[10px] text-blue-400">
+                            {ds.buildStatus === "running" ? "building…" : "queued…"}
+                          </span>
+                        )}
+                        {isMissing && (
+                          <span className="text-destructive flex items-center gap-1 text-[10px]">
+                            <AlertTriangle className="h-3 w-3" />
+                            path missing
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-muted-foreground font-mono text-xs break-all">{ds.path}</p>
+                    </div>
+                    <Badge variant="secondary" className="shrink-0 text-[10px]">
+                      {ds.buckets.length} bucket{ds.buckets.length !== 1 ? "s" : ""}
+                    </Badge>
+                    <ConfirmDialog
+                      title="Delete dataset?"
+                      description={`This will remove the "${ds.name}" dataset record. The files on disk will not be deleted.`}
+                      confirmLabel="Delete"
+                      onConfirm={() => onDeleteDataset(ds.id)}
+                    >
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:bg-destructive/15 hover:text-destructive h-7 w-7 shrink-0 p-0"
+                        title="Delete dataset record"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </ConfirmDialog>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </>
         )}
       </div>
@@ -166,7 +181,9 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="dsName" className="text-xs">Dataset Name</Label>
+            <Label htmlFor="dsName" className="text-xs">
+              Dataset Name
+            </Label>
             <Input
               id="dsName"
               placeholder="e.g. nature-multi-res"
@@ -176,15 +193,13 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
           </div>
 
           {completedJobs.length === 0 ? (
-            <EmptyState>
-              No completed preprocessing jobs. Process some folders first.
-            </EmptyState>
+            <EmptyState>No completed preprocessing jobs. Process some folders first.</EmptyState>
           ) : (
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              <Label className="text-muted-foreground text-xs tracking-wider uppercase">
                 Select Processed Buckets
               </Label>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+              <div className="max-h-64 space-y-1.5 overflow-y-auto">
                 {completedJobs.map((job) => {
                   const checked = selectedJobIds.has(job.id);
                   return (
@@ -200,11 +215,11 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
                       )}
                     >
                       {checked ? (
-                        <CheckSquare className="h-4 w-4 text-primary shrink-0" />
+                        <CheckSquare className="text-primary h-4 w-4 shrink-0" />
                       ) : (
-                        <Square className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <Square className="text-muted-foreground h-4 w-4 shrink-0" />
                       )}
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
                       <span className="text-sm">{job.name}</span>
                     </button>
                   );
@@ -215,7 +230,7 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
 
           {selectedJobIds.size > 0 && datasetName.trim() && (
             <div className="flex items-center justify-between pt-2">
-              <span className="text-sm text-muted-foreground">
+              <span className="text-muted-foreground text-sm">
                 {selectedJobIds.size} bucket{selectedJobIds.size !== 1 ? "s" : ""} selected
               </span>
               <Button onClick={handleBuild}>

@@ -11,6 +11,7 @@ import { SourceFolderCard } from "@/components/SourceFolderCard";
 import { FolderConfigPanel, type ResFrameConfig } from "@/components/FolderConfigPanel";
 import { ProcessingMatrix } from "@/components/ProcessingMatrix";
 import { DatasetBuilder } from "@/components/DatasetBuilder";
+import { PageHeader } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,10 @@ export default function DatasetsPage() {
   const effectiveFolderId = selectedFolderId ?? folders[0]?.id ?? null;
   const selectedFolder = folders.find((f) => f.id === effectiveFolderId) ?? null;
   const completedJobs = useMemo(
-    () => jobs.filter((j) => j.type === "preprocess" && j.status === "completed" && j.outputExists !== false),
+    () =>
+      jobs.filter(
+        (j) => j.type === "preprocess" && j.status === "completed" && j.outputExists !== false,
+      ),
     [jobs],
   );
 
@@ -100,12 +104,10 @@ export default function DatasetsPage() {
 
   return (
     <div className="space-y-6 p-3 md:p-4">
-      <div>
-        <h1 className="title-gradient page-title">Datasets</h1>
-        <p className="page-subtitle mt-2.5">
-          Manage source folders, process videos into latents, and build training datasets
-        </p>
-      </div>
+      <PageHeader
+        title="Datasets"
+        subtitle="Manage source folders, process videos into latents, and build training datasets"
+      />
 
       <Tabs defaultValue="folders" className="space-y-4">
         <TabsList>
@@ -165,7 +167,7 @@ export default function DatasetsPage() {
 
         <TabsContent value="build" className="space-y-4">
           {buildError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
               {buildError}
             </div>
           )}
@@ -173,7 +175,13 @@ export default function DatasetsPage() {
             completedJobs={completedJobs}
             datasets={datasets}
             onBuildDataset={handleBuildDataset}
-            onDeleteDataset={async (id) => { try { await deleteDataset(id); } catch (err) { console.error(err); } }}
+            onDeleteDataset={async (id) => {
+              try {
+                await deleteDataset(id);
+              } catch (err) {
+                console.error(err);
+              }
+            }}
             onRefresh={handleRefresh}
             isRefreshing={isManualRefreshing}
           />

@@ -1,12 +1,10 @@
 "use client";
 
 import type { ProcessingJob } from "@/lib/types";
-import { JOB_STATUS } from "@/lib/jobStatus";
 import { formatDuration } from "@/lib/format";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/components/StatusBadge";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
 import { EmptyState } from "@/components/EmptyState";
 import { X, RotateCcw, GraduationCap, Layers, Package, AlertTriangle } from "lucide-react";
@@ -28,11 +26,7 @@ export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
   const hasQueuedJobs = jobs.some((j) => j.status === "queued" || j.status === "running");
 
   if (jobs.length === 0) {
-    return (
-      <EmptyState className="surface-neo-inset rounded-2xl">
-        No jobs in queue
-      </EmptyState>
-    );
+    return <EmptyState className="surface-neo-inset rounded-2xl">No jobs in queue</EmptyState>;
   }
 
   return (
@@ -41,45 +35,36 @@ export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
         <div className="flex items-center gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-400">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>
-            Worker process is not running — queued jobs will not start.
-            Run <code className="font-mono text-xs bg-yellow-500/10 px-1 rounded">npm run worker</code> or restart with <code className="font-mono text-xs bg-yellow-500/10 px-1 rounded">npm run dev</code>.
+            Worker process is not running — queued jobs will not start. Run{" "}
+            <code className="rounded bg-yellow-500/10 px-1 font-mono text-xs">npm run worker</code>{" "}
+            or restart with{" "}
+            <code className="rounded bg-yellow-500/10 px-1 font-mono text-xs">npm run dev</code>.
           </span>
         </div>
       )}
       {jobs.map((job) => {
         const TypeIcon = TYPE_ICONS[job.type] || Layers;
-        const status = JOB_STATUS[job.status];
-        const StatusIcon = status.icon;
 
         return (
           <div
             key={job.id}
-            className="surface-neo flex items-center gap-3 rounded-xl border border-border px-3 py-2"
+            className="surface-neo border-border flex items-center gap-3 rounded-xl border px-3 py-2"
           >
-            <TypeIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+            <TypeIcon className="text-muted-foreground h-4 w-4 shrink-0" />
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium font-mono">
+                <span className="truncate font-mono text-sm font-medium">
                   {job.type === "preprocess"
-                    ? ((job.config as Record<string, unknown>).outputFolderPath as string | undefined) ?? job.name
+                    ? (((job.config as Record<string, unknown>).outputFolderPath as
+                        | string
+                        | undefined) ?? job.name)
                     : job.name}
                 </span>
-                <Badge
-                  variant="outline"
-                  className={cn("text-[10px] shrink-0", status.class)}
-                >
-                  <StatusIcon
-                    className={cn(
-                      "mr-1 h-3 w-3",
-                      job.status === "running" && "animate-spin",
-                    )}
-                  />
-                  {status.label}
-                </Badge>
+                <StatusBadge status={job.status} className="shrink-0" />
               </div>
               {job.startedAt && (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-muted-foreground text-[10px]">
                   {formatDuration(job.startedAt, job.completedAt)}
                   {job.error && ` — ${job.error}`}
                 </span>
@@ -88,13 +73,13 @@ export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
 
             {job.status === "running" && job.progress != null && (
               <div className="w-16 shrink-0">
-                <div className="surface-neo-inset h-1.5 w-full rounded-full bg-muted">
+                <div className="surface-neo-inset bg-muted h-1.5 w-full rounded-full">
                   <div
                     className="h-full rounded-full bg-blue-500 transition-all"
                     style={{ width: `${job.progress}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-muted-foreground tabular-nums">
+                <span className="text-muted-foreground text-[10px] tabular-nums">
                   {job.progress}%
                 </span>
               </div>
@@ -106,7 +91,7 @@ export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground shrink-0"
+                  className="text-muted-foreground hover:text-foreground h-6 w-6 shrink-0 p-0"
                   title="Reuse config"
                   onClick={() => onReuse(job)}
                 >
@@ -114,24 +99,23 @@ export function JobQueueList({ jobs, onCancel, onReuse }: Props) {
                 </Button>
               )}
 
-            {(job.status === "queued" || job.status === "running") &&
-              onCancel && (
-                <ConfirmDialog
-                  title={job.status === "running" ? "Stop this job?" : "Cancel this job?"}
-                  description={`This will ${job.status === "running" ? "terminate" : "remove"} "${job.name}"${job.status === "running" ? ". Any unsaved progress will be lost." : " from the queue."}`}
-                  confirmLabel={job.status === "running" ? "Stop" : "Cancel Job"}
-                  onConfirm={() => onCancel(job.id)}
+            {(job.status === "queued" || job.status === "running") && onCancel && (
+              <ConfirmDialog
+                title={job.status === "running" ? "Stop this job?" : "Cancel this job?"}
+                description={`This will ${job.status === "running" ? "terminate" : "remove"} "${job.name}"${job.status === "running" ? ". Any unsaved progress will be lost." : " from the queue."}`}
+                confirmLabel={job.status === "running" ? "Stop" : "Cancel Job"}
+                onConfirm={() => onCancel(job.id)}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive h-6 w-6 shrink-0 p-0"
+                  title={job.status === "running" ? "Stop" : "Cancel"}
                 >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                    title={job.status === "running" ? "Stop" : "Cancel"}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </ConfirmDialog>
-              )}
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </ConfirmDialog>
+            )}
           </div>
         );
       })}

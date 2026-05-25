@@ -1,19 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import type { TrainingConfig, ProcessingJob } from "@/lib/types";
+import { buildDefaultConfig, extractTrainingConfig } from "@/lib/training";
 import { useDatasets } from "@/hooks/useDatasets";
 import { useRuns } from "@/hooks/useRuns";
 import { useSettings } from "@/hooks/useSettings";
 import { apiFetch } from "@/lib/api";
 import { TrainingConfigForm } from "@/components/TrainingConfigForm";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { PageHeader } from "@/components/PageHeader";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -26,119 +23,21 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Play, Loader2 } from "lucide-react";
 
-function buildDefaultConfig(
-  modelPath: string,
-  textEncoderPath: string,
-  outputDir: string,
-): TrainingConfig {
-  return {
-    model: {
-      modelPath,
-      textEncoderPath,
-      trainingMode: "lora",
-      loadCheckpoint: null,
-    },
-    lora: {
-      rank: 48,
-      alpha: 48,
-      dropout: 0.05,
-      targetModules: [
-        "to_k",
-        "to_q",
-        "to_v",
-        "to_out.0",
-        "to_gate_logits",
-        "net.0.proj",
-        "net.2",
-      ],
-    },
-    trainingStrategy: {
-      name: "text_to_video",
-      firstFrameConditioningP: 1.0,
-      withAudio: true,
-      audioLatentsDir: "audio_latents",
-      hFlip: true,
-      firstFrameConditioningNoise: 0.0,
-      temporalBoundaryLossWeight: 1.2,
-      temporalBoundaryFrames: 3,
-    },
-    optimization: {
-      learningRate: 1e-5,
-      steps: 11200,
-      batchSize: 1,
-      gradientAccumulationSteps: 1,
-      maxGradNorm: 1.0,
-      optimizerType: "muon",
-      weightDecay: 0.0001,
-      schedulerType: "lambda_warmup",
-      numWarmupSteps: 560,
-      enableGradientCheckpointing: true,
-    },
-    flowMatching: {
-      timestepSamplingMode: "uniform",
-      timestepLossWeighting: "weighted",
-    },
-    validation: {
-      prompts: [],
-      images: [],
-      negativePrompt:
-        "worst quality, inconsistent motion, blurry, jittery, distorted",
-      videoDims: [416, 608, 241],
-      frameRate: 24.0,
-      seed: 42,
-      inferenceSteps: 30,
-      interval: 560,
-      videosPerPrompt: 1,
-      guidanceScale: 3.0,
-      generateAudio: true,
-      skipInitialValidation: false,
-    },
-    checkpoints: {
-      interval: 560,
-      keepLastN: -1,
-      precision: "bfloat16",
-    },
-    outputDir: outputDir || "/tmp/ltx-training",
-    seed: 42,
-  };
-}
-
-function deepMerge<T extends Record<string, unknown>>(defaults: T, partial: Record<string, unknown>): T {
-  const result = { ...defaults };
-  for (const key of Object.keys(partial)) {
-    const val = partial[key];
-    const def = (defaults as Record<string, unknown>)[key];
-    if (val != null && typeof val === "object" && !Array.isArray(val) && def != null && typeof def === "object" && !Array.isArray(def)) {
-      (result as Record<string, unknown>)[key] = deepMerge(def as Record<string, unknown>, val as Record<string, unknown>);
-    } else if (val !== undefined) {
-      (result as Record<string, unknown>)[key] = val;
-    }
-  }
-  return result;
-}
-
-function extractTrainingConfig(
-  jobConfig: Record<string, unknown>,
-  defaults: TrainingConfig,
-): { config: TrainingConfig; gpuMode: "single" | "ddp"; gpuIds: string; datasetName: string } {
-  const {
-    configPath: _cp,
-    preprocessedDataRoot: _pdr,
-    gpuMode,
-    gpuIds,
-    datasetName,
-    ...rest
-  } = jobConfig;
-
-  return {
-    config: deepMerge(defaults as unknown as Record<string, unknown>, rest) as unknown as TrainingConfig,
-    gpuMode: (gpuMode as "single" | "ddp") || "single",
-    gpuIds: (gpuIds as string) || "0",
-    datasetName: (datasetName as string) || "",
-  };
-}
-
 export default function TrainingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center p-12">
+          <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+        </div>
+      }
+    >
+      <TrainingPageInner />
+    </Suspense>
+  );
+}
+
+function TrainingPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fromJobId = searchParams.get("fromJob");
@@ -155,27 +54,7 @@ export default function TrainingPage() {
   const appliedFromJob = useRef<string | null>(null);
 
   useEffect(() => {
-    if (fromJobId && appliedFromJob.current !== fromJobId) {
-      appliedFromJob.current = fromJobId;
-      apiFetch<ProcessingJob>(`/api/jobs/${fromJobId}`).then((job) => {
-        if (job.type === "training") {
-          const defaults = buildDefaultConfig(
-            settings?.modelPath || "",
-            settings?.textEncoderPath || "",
-            settings?.outputDir || "/tmp/ltx-training",
-          );
-          const restored = extractTrainingConfig(job.config, defaults);
-          setConfig(restored.config);
-          setGpuMode(restored.gpuMode);
-          setGpuIds(restored.gpuIds);
-          if (restored.datasetName) setSelectedDataset(restored.datasetName);
-        }
-      }).catch((err) => {
-        console.error("Failed to load job config:", err);
-      });
-      return;
-    }
-
+    if (fromJobId) return;
     if (settings && !config) {
       setConfig(
         buildDefaultConfig(
@@ -185,12 +64,42 @@ export default function TrainingPage() {
         ),
       );
     }
-  }, [settings, config, fromJobId]);
+  }, [fromJobId, settings, config]);
+
+  useEffect(() => {
+    if (!fromJobId || !settings) return;
+    if (appliedFromJob.current === fromJobId) return;
+    appliedFromJob.current = fromJobId;
+
+    apiFetch<ProcessingJob>(`/api/jobs/${fromJobId}`)
+      .then((job) => {
+        if (job.type !== "training") return;
+        const defaults = buildDefaultConfig(
+          settings.modelPath || "",
+          settings.textEncoderPath || "",
+          settings.outputDir || "/tmp/ltx-training",
+        );
+        const restored = extractTrainingConfig(job.config as Record<string, unknown>, defaults);
+        setConfig(restored.config);
+        setGpuMode(restored.gpuMode);
+        setGpuIds(restored.gpuIds);
+        if (restored.datasetName) setSelectedDataset(restored.datasetName);
+      })
+      .catch(() => {
+        setConfig(
+          buildDefaultConfig(
+            settings.modelPath || "",
+            settings.textEncoderPath || "",
+            settings.outputDir || "/tmp/ltx-training",
+          ),
+        );
+      });
+  }, [fromJobId, settings]);
 
   if (!config) {
     return (
       <div className="flex items-center justify-center p-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
       </div>
     );
   }
@@ -199,7 +108,7 @@ export default function TrainingPage() {
 
   const handleStartTraining = async () => {
     setStartError(null);
-    const outputName = config.outputDir.split("/").pop() || "training-run";
+    const outputName = config.outputDir.replace(/\/$/, "").split("/").pop() || "training-run";
     try {
       await createRun({
         name: outputName,
@@ -216,12 +125,7 @@ export default function TrainingPage() {
 
   return (
     <div className="space-y-6 p-3 md:p-4">
-      <div>
-        <h1 className="title-gradient page-title">Training</h1>
-        <p className="page-subtitle mt-2.5">
-          Configure and launch a training run
-        </p>
-      </div>
+      <PageHeader title="Training" subtitle="Configure and launch a training run" />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_300px]">
         <div className="space-y-6">
@@ -233,10 +137,7 @@ export default function TrainingPage() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label className="text-xs">Training Dataset</Label>
-                  <Select
-                    value={activeDataset}
-                    onValueChange={(v) => v && setSelectedDataset(v)}
-                  >
+                  <Select value={activeDataset} onValueChange={(v) => v && setSelectedDataset(v)}>
                     <SelectTrigger className="w-full text-xs">
                       <SelectValue placeholder="Select a dataset" />
                     </SelectTrigger>
@@ -261,7 +162,7 @@ export default function TrainingPage() {
                         setGpuIds(mode === "single" ? "0" : "0,1");
                       }}
                     >
-                      <SelectTrigger className="text-xs w-[140px]">
+                      <SelectTrigger className="w-[140px] text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -269,11 +170,8 @@ export default function TrainingPage() {
                         <SelectItem value="ddp">Multi-GPU (DDP)</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Select
-                      value={gpuIds}
-                      onValueChange={(v) => v && setGpuIds(v)}
-                    >
-                      <SelectTrigger className="text-xs flex-1">
+                    <Select value={gpuIds} onValueChange={(v) => v && setGpuIds(v)}>
+                      <SelectTrigger className="flex-1 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -288,9 +186,7 @@ export default function TrainingPage() {
                           <>
                             <SelectItem value="0,1">GPU 0, 1</SelectItem>
                             <SelectItem value="0,1,2">GPU 0, 1, 2</SelectItem>
-                            <SelectItem value="0,1,2,3">
-                              GPU 0, 1, 2, 3
-                            </SelectItem>
+                            <SelectItem value="0,1,2,3">GPU 0, 1, 2, 3</SelectItem>
                           </>
                         )}
                       </SelectContent>
@@ -332,9 +228,7 @@ export default function TrainingPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">LR</span>
-                <span className="font-mono">
-                  {config.optimization.learningRate}
-                </span>
+                <span className="font-mono">{config.optimization.learningRate}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Optimizer</span>
@@ -342,25 +236,19 @@ export default function TrainingPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">GPU</span>
-                <span>
-                  {gpuMode === "ddp" ? `DDP (${gpuIds})` : `GPU ${gpuIds}`}
-                </span>
+                <span>{gpuMode === "ddp" ? `DDP (${gpuIds})` : `GPU ${gpuIds}`}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Audio</span>
                 <Badge
-                  variant={
-                    config.trainingStrategy.withAudio ? "default" : "secondary"
-                  }
+                  variant={config.trainingStrategy.withAudio ? "default" : "secondary"}
                   className="text-[10px]"
                 >
                   {config.trainingStrategy.withAudio ? "Yes" : "No"}
                 </Badge>
               </div>
 
-              {startError && (
-                <p className="text-xs text-destructive">{startError}</p>
-              )}
+              {startError && <p className="text-destructive text-xs">{startError}</p>}
 
               <Button
                 className="w-full"
@@ -372,7 +260,7 @@ export default function TrainingPage() {
               </Button>
 
               {!activeDataset && (
-                <p className="text-[10px] text-center text-muted-foreground">
+                <p className="text-muted-foreground text-center text-[10px]">
                   Select a dataset to enable training
                 </p>
               )}

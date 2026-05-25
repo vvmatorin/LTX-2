@@ -13,16 +13,14 @@ export function useFolders() {
   });
 
   const addFolder = useMutation({
-    mutationFn: (folderPath: string) =>
-      apiPost<SourceFolder>("/api/folders", { path: folderPath }),
+    mutationFn: (folderPath: string) => apiPost<SourceFolder>("/api/folders", { path: folderPath }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
   });
 
   const removeFolder = useMutation({
-    mutationFn: (id: number) =>
-      apiDelete<{ ok: boolean }>(`/api/folders?id=${id}`),
+    mutationFn: (id: number) => apiDelete<{ ok: boolean }>(`/api/folders?id=${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },

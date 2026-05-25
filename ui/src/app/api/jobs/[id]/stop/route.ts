@@ -3,10 +3,7 @@ import { db } from "@/db";
 import { jobs } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export async function POST(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = Number(idStr);
 
@@ -16,7 +13,7 @@ export async function POST(
   }
 
   if (job.status !== "running" && job.status !== "queued") {
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ error: "Job is already in a terminal state" }, { status: 400 });
   }
 
   if (job.status === "running" && job.pid) {

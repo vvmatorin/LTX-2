@@ -79,26 +79,38 @@ export function useTensorboard(activeJob: ProcessingJob | null) {
     }
   }, [probeReadiness]);
 
-  const start = useCallback(async (logDir: string) => {
-    setState((prev) => ({ ...prev, error: null }));
-    try {
-      const res = await fetch("/api/tensorboard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logDir }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setState((prev) => ({ ...prev, error: data.error }));
-      } else {
-        setState({ running: true, ready: false, port: data.port, logDir: data.logDir, error: null });
-        probeReadiness();
-        lastStartedLogDir.current = logDir;
+  const start = useCallback(
+    async (logDir: string) => {
+      setState((prev) => ({ ...prev, error: null }));
+      try {
+        const res = await fetch("/api/tensorboard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ logDir }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          setState((prev) => ({ ...prev, error: data.error }));
+        } else {
+          setState({
+            running: true,
+            ready: false,
+            port: data.port,
+            logDir: data.logDir,
+            error: null,
+          });
+          probeReadiness();
+          lastStartedLogDir.current = logDir;
+        }
+      } catch (err) {
+        setState((prev) => ({
+          ...prev,
+          error: err instanceof Error ? err.message : "Failed to start",
+        }));
       }
-    } catch (err) {
-      setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : "Failed to start" }));
-    }
-  }, [probeReadiness]);
+    },
+    [probeReadiness],
+  );
 
   const stop = useCallback(async () => {
     clearReadinessProbe();

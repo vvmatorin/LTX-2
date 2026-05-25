@@ -1,10 +1,5 @@
-import {
-  Clock,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
+import { Clock, Loader2, CheckCircle2, XCircle, HelpCircle, type LucideIcon } from "lucide-react";
+import type { ProcessingJob } from "./types";
 
 export interface StatusStyle {
   icon: LucideIcon;
@@ -12,7 +7,13 @@ export interface StatusStyle {
   class: string;
 }
 
-export const JOB_STATUS: Record<string, StatusStyle> = {
+export const FALLBACK_STATUS: StatusStyle = {
+  icon: HelpCircle,
+  label: "Unknown",
+  class: "bg-muted text-muted-foreground border-border",
+};
+
+export const JOB_STATUS: Record<ProcessingJob["status"], StatusStyle> = {
   queued: {
     icon: Clock,
     label: "Queued",
@@ -38,4 +39,4 @@ export const JOB_STATUS: Record<string, StatusStyle> = {
     label: "Cancelled",
     class: "bg-muted text-muted-foreground border-border",
   },
-} as const;
+};

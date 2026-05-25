@@ -1,43 +1,50 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSettings } from "@/hooks/useSettings";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Save } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
+import { Save, Loader2 } from "lucide-react";
 import type { AppSettings } from "@/lib/types";
 
-function buildLocalSettings(api: AppSettings | undefined): AppSettings {
+function buildLocalSettings(api: AppSettings): AppSettings {
   return {
-    modelPath: api?.modelPath || "",
-    textEncoderPath: api?.textEncoderPath || "",
-    outputDir: api?.outputDir || "",
-    datasetDir: api?.datasetDir || "",
-    scriptsDir: api?.scriptsDir || "",
+    modelPath: api.modelPath || "",
+    textEncoderPath: api.textEncoderPath || "",
+    outputDir: api.outputDir || "",
+    datasetDir: api.datasetDir || "",
+    scriptsDir: api.scriptsDir || "",
   };
 }
 
 export default function SettingsPage() {
   const { settings: apiSettings, saveSettings, isSaving } = useSettings();
 
-  const [local, setLocal] = useState<AppSettings>(() =>
-    buildLocalSettings(apiSettings),
-  );
-  const [saved, setSaved] = useState(false);
+  if (!apiSettings) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    if (apiSettings) {
-      setLocal(buildLocalSettings(apiSettings));
-    }
-  }, [apiSettings]);
+  return <SettingsForm initial={apiSettings} saveSettings={saveSettings} isSaving={isSaving} />;
+}
+
+function SettingsForm({
+  initial,
+  saveSettings,
+  isSaving,
+}: {
+  initial: AppSettings;
+  saveSettings: (s: Partial<AppSettings>) => Promise<unknown>;
+  isSaving: boolean;
+}) {
+  const [local, setLocal] = useState<AppSettings>(() => buildLocalSettings(initial));
+  const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
     try {
@@ -55,12 +62,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-3 md:p-4">
-      <div>
-        <h1 className="title-gradient page-title">Settings</h1>
-        <p className="page-subtitle mt-2.5">
-          Global defaults for model paths and directories
-        </p>
-      </div>
+      <PageHeader title="Settings" subtitle="Global defaults for model paths and directories" />
 
       <Card>
         <CardHeader>

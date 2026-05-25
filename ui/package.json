@@ -6,9 +6,13 @@
     "dev": "concurrently --kill-others-on-fail -n next,worker -c cyan,yellow \"next dev --port ${PORT:-8675}\" \"tsx src/worker/index.ts\"",
     "dev:next": "next dev --port ${PORT:-8675}",
     "build": "next build",
-    "start": "next start --port ${PORT:-8675}",
+    "start": "concurrently --kill-others-on-fail -n next,worker -c cyan,yellow \"next start --port ${PORT:-8675}\" \"tsx src/worker/index.ts\"",
+    "start:next": "next start --port ${PORT:-8675}",
+    "build_and_start": "npm install && npm run setup && npm run build && npm run start",
     "lint": "next lint",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "worker": "tsx src/worker/index.ts",
+    "setup": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
@@ -43,6 +47,8 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.16.0",
     "eslint-config-next": "^15.5.18",
+    "prettier": "^3.5.0",
+    "prettier-plugin-tailwindcss": "^0.6.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

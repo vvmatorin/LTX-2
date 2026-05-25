@@ -69,10 +69,7 @@ export async function POST(req: Request) {
   const logDir: string = body.logDir;
 
   if (!logDir) {
-    return NextResponse.json(
-      { error: "logDir is required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "logDir is required" }, { status: 400 });
   }
 
   killTbProcess();
@@ -81,11 +78,16 @@ export async function POST(req: Request) {
     const child = spawn(
       "tensorboard",
       [
-        "--logdir", logDir,
-        "--port", String(TB_PORT),
-        "--host", TB_HOST,
-        "--path_prefix", TB_PATH_PREFIX,
-        "--reload_interval", "5",
+        "--logdir",
+        logDir,
+        "--port",
+        String(TB_PORT),
+        "--host",
+        TB_HOST,
+        "--path_prefix",
+        TB_PATH_PREFIX,
+        "--reload_interval",
+        "5",
       ],
       {
         detached: true,
@@ -94,10 +96,7 @@ export async function POST(req: Request) {
     );
 
     if (!child.pid) {
-      return NextResponse.json(
-        { error: "Failed to spawn tensorboard process" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "Failed to spawn tensorboard process" }, { status: 500 });
     }
 
     child.unref();

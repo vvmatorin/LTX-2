@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { jobs, trainingDatasets } from "@/db/schema";
 import { nextQueuePosition } from "@/db/queries";
 import { eq, inArray } from "drizzle-orm";
+import { parseJobConfig, safeId } from "@/lib/utils";
 import fs from "fs";
 import path from "path";
 import type { DatasetBucket } from "@/lib/types";
@@ -24,7 +25,7 @@ export async function GET() {
   return NextResponse.json(
     rows.map((r) => ({
       ...r,
-      buckets: JSON.parse(r.buckets),
+      buckets: parseJobConfig(r.buckets) ?? [],
       pathExists: r.path ? fs.existsSync(path.join(r.path, ".precomputed")) : false,
       buildStatus: buildStatusByDataset.get(r.name) ?? null,
     })),
@@ -32,13 +33,15 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   if (!body.name || !body.path || !body.buckets) {
-    return NextResponse.json(
-      { error: "name, path, and buckets are required" },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "name, path, and buckets are required" }, { status: 400 });
   }
 
   const buckets = body.buckets as DatasetBucket[];
@@ -49,14 +52,14 @@ export async function POST(req: Request) {
 
   if (missingPaths.length > 0) {
     return NextResponse.json(
-      { error: `Bucket source path${missingPaths.length > 1 ? "s" : ""} do not exist on disk: ${missingPaths.join(", ")}` },
+      {
+        error: `Bucket source path${missingPaths.length > 1 ? "s" : ""} do not exist on disk: ${missingPaths.join(", ")}`,
+      },
       { status: 400 },
     );
   }
 
-  const sourceDirs = buckets
-    .map((b) => b.folderPath)
-    .filter((p): p is string => Boolean(p));
+  const sourceDirs = buckets.map((b) => b.folderPath).filter((p): p is string => Boolean(p));
 
   if (sourceDirs.length === 0) {
     return NextResponse.json(
@@ -68,8 +71,8 @@ export async function POST(req: Request) {
   const result = db
     .insert(trainingDatasets)
     .values({
-      name: body.name,
-      path: body.path,
+      name: body.name as string,
+      path: body.path as string,
       buckets: JSON.stringify(buckets),
     })
     .returning()
@@ -86,14 +89,14 @@ export async function POST(req: Request) {
     .run();
 
   return NextResponse.json(
-    { ...result, buckets: JSON.parse(result.buckets) },
+    { ...result, buckets: parseJobConfig(result.buckets) ?? [] },
     { status: 201 },
   );
 }
 
 export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
-  const id = Number(searchParams.get("id"));
+  const id = safeId(searchParams.get("id"));
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }

@@ -3,24 +3,45 @@ import { db } from "@/db";
 import { jobs, trainingDatasets } from "@/db/schema";
 import { nextQueuePosition } from "@/db/queries";
 import { eq } from "drizzle-orm";
+import { parseJobConfig } from "@/lib/utils";
 import fs from "fs";
 import path from "path";
 import YAML from "yaml";
 import type { TrainingConfig } from "@/lib/types";
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const uiConfig = body.config as TrainingConfig;
+  const datasetName = body.datasetName as string | undefined;
+  const runName = body.name as string | undefined;
+  const gpuMode = body.gpuMode as string | undefined;
+  const gpuIds = body.gpuIds as string | undefined;
+
+  if (!datasetName) {
+    return NextResponse.json({ error: "datasetName is required" }, { status: 400 });
+  }
 
   const outputDir: string = uiConfig.outputDir || "/tmp/ltx-training";
-  fs.mkdirSync(outputDir, { recursive: true });
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Failed to create output directory: ${err instanceof Error ? err.message : err}` },
+      { status: 500 },
+    );
+  }
 
   let preprocessedDataRoot: string | null = null;
-  if (body.datasetName) {
+  if (datasetName) {
     const dataset = db
       .select()
       .from(trainingDatasets)
-      .where(eq(trainingDatasets.name, body.datasetName))
+      .where(eq(trainingDatasets.name, datasetName))
       .get();
     if (dataset) {
       preprocessedDataRoot = path.join(dataset.path, ".precomputed");
@@ -32,20 +53,27 @@ export async function POST(req: Request) {
 
   const yamlConfig = buildYamlConfig(uiConfig, preprocessedDataRoot);
   const configPath = path.join(outputDir, "training_config.yaml");
-  fs.writeFileSync(configPath, YAML.stringify(yamlConfig), "utf-8");
+  try {
+    fs.writeFileSync(configPath, YAML.stringify(yamlConfig), "utf-8");
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Failed to write config file: ${err instanceof Error ? err.message : err}` },
+      { status: 500 },
+    );
+  }
 
   const result = db
     .insert(jobs)
     .values({
       type: "training",
-      name: body.name || path.basename(outputDir),
+      name: runName || path.basename(outputDir),
       status: "queued",
       config: JSON.stringify({
         ...uiConfig,
         configPath,
-        gpuMode: body.gpuMode,
-        gpuIds: body.gpuIds,
-        datasetName: body.datasetName,
+        gpuMode,
+        gpuIds,
+        datasetName,
         preprocessedDataRoot,
       }),
       queuePosition: nextQueuePosition(),
@@ -55,7 +83,7 @@ export async function POST(req: Request) {
     .get();
 
   return NextResponse.json(
-    { ...result, config: JSON.parse(result.config) },
+    { ...result, config: parseJobConfig(result.config) ?? {} },
     { status: 201 },
   );
 }
@@ -71,12 +99,15 @@ function buildYamlConfig(
       training_mode: uiConfig.model.trainingMode || "lora",
       load_checkpoint: uiConfig.model.loadCheckpoint || null,
     },
-    lora: uiConfig.model.trainingMode !== "full" ? {
-      rank: uiConfig.lora.rank,
-      alpha: uiConfig.lora.alpha,
-      dropout: uiConfig.lora.dropout,
-      target_modules: uiConfig.lora.targetModules,
-    } : undefined,
+    lora:
+      uiConfig.model.trainingMode !== "full"
+        ? {
+            rank: uiConfig.lora.rank,
+            alpha: uiConfig.lora.alpha,
+            dropout: uiConfig.lora.dropout,
+            target_modules: uiConfig.lora.targetModules,
+          }
+        : undefined,
     training_strategy: {
       name: uiConfig.trainingStrategy.name,
       first_frame_conditioning_p: uiConfig.trainingStrategy.firstFrameConditioningP,

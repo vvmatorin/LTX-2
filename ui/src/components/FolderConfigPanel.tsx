@@ -8,7 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
@@ -22,11 +28,13 @@ export interface ResFrameConfig {
 
 interface Props {
   folder: SourceFolder;
-  onQueueProcessing: (configs: Array<{
-    resolution: number;
-    frameCount: number;
-    config: ResFrameConfig;
-  }>) => void;
+  onQueueProcessing: (
+    configs: Array<{
+      resolution: number;
+      frameCount: number;
+      config: ResFrameConfig;
+    }>,
+  ) => void;
 }
 
 export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
@@ -95,7 +103,7 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+          <Label className="text-muted-foreground text-xs tracking-wider uppercase">
             Target Resolutions
           </Label>
           <div className="flex flex-wrap gap-2">
@@ -121,9 +129,9 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
           const resFrames = selectedFrames[res] || new Set<FrameCountOption>();
 
           return (
-            <div key={res} className="space-y-2 rounded-lg border border-border p-3">
+            <div key={res} className="border-border space-y-2 rounded-lg border p-3">
               <div className="flex items-center gap-3">
-                <Label className="text-sm font-medium shrink-0">{res}px</Label>
+                <Label className="shrink-0 text-sm font-medium">{res}px</Label>
                 <div className="flex flex-wrap gap-1.5">
                   {FRAME_COUNT_OPTIONS.map((frame) => (
                     <button
@@ -153,9 +161,12 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
                   return (
                     <div
                       key={key}
-                      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-muted/50 px-3 py-2"
+                      className="bg-muted/50 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md px-3 py-2"
                     >
-                      <Badge variant="outline" className="w-[100px] justify-center text-xs shrink-0">
+                      <Badge
+                        variant="outline"
+                        className="w-[100px] shrink-0 justify-center text-xs"
+                      >
                         {res} x {frame === 1 ? "img" : `${frame}f`}
                       </Badge>
 
@@ -165,7 +176,9 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
                           checked={cfg.hFlip}
                           onCheckedChange={(v) => updateConfig(key, { hFlip: v })}
                         />
-                        <Label htmlFor={`${key}-hflip`} className="text-xs">H-Flip</Label>
+                        <Label htmlFor={`${key}-hflip`} className="text-xs">
+                          H-Flip
+                        </Label>
                       </div>
 
                       <div className="flex items-center gap-1.5">
@@ -174,7 +187,9 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
                           checked={cfg.withAudio}
                           onCheckedChange={(v) => updateConfig(key, { withAudio: v })}
                         />
-                        <Label htmlFor={`${key}-audio`} className="text-xs">Audio</Label>
+                        <Label htmlFor={`${key}-audio`} className="text-xs">
+                          Audio
+                        </Label>
                       </div>
 
                       <Select
@@ -193,11 +208,9 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
                       </Select>
 
                       <Input
-                        className="h-8 w-[170px] text-xs font-mono"
+                        className="h-8 w-[170px] font-mono text-xs"
                         value={cfg.datasetFilename}
-                        onChange={(e) =>
-                          updateConfig(key, { datasetFilename: e.target.value })
-                        }
+                        onChange={(e) => updateConfig(key, { datasetFilename: e.target.value })}
                       />
                     </div>
                   );
@@ -208,7 +221,7 @@ export function FolderConfigPanel({ folder, onQueueProcessing }: Props) {
 
         {allPairs.length > 0 && (
           <div className="flex items-center justify-between pt-2">
-            <span className="text-sm text-muted-foreground">
+            <span className="text-muted-foreground text-sm">
               {allPairs.length} processing job{allPairs.length !== 1 ? "s" : ""} to queue
             </span>
             <Button onClick={() => onQueueProcessing(allPairs)}>
