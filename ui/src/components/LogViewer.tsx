@@ -35,83 +35,116 @@ const TERMINAL_THEME = {
   brightWhite: '#f8fafc',
 } as const;
 
+// Module-level cache that survives React unmount/remount cycles. Without this,
+// navigating away from /runs disposes the xterm Terminal and closes the SSE,
+// so coming back forces the server to re-stream the entire log backlog and
+// xterm to re-render every byte — visibly slow on long-running jobs.
+type CachedTerminal = {
+  jobId: number;
+  term: Terminal;
+  fit: FitAddon;
+  wrapper: HTMLDivElement;
+  es: EventSource;
+};
+
+let cached: CachedTerminal | null = null;
+
+function disposeCache() {
+  if (!cached) return;
+  try {
+    cached.es.close();
+  } catch {
+    /* ignore */
+  }
+  try {
+    cached.term.dispose();
+  } catch {
+    /* ignore */
+  }
+  cached.wrapper.remove();
+  cached = null;
+}
+
+function createCache(jobId: number): CachedTerminal {
+  const wrapper = document.createElement('div');
+  wrapper.style.width = '100%';
+  wrapper.style.height = '100%';
+
+  const term = new Terminal({
+    convertEol: true,
+    cursorBlink: false,
+    disableStdin: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    fontSize: 12,
+    lineHeight: 1.25,
+    scrollback: 10_000,
+    theme: TERMINAL_THEME,
+    allowProposedApi: true,
+  });
+
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.open(wrapper);
+
+  const es = new EventSource(`/api/jobs/${jobId}/logs`);
+
+  es.onmessage = event => {
+    let data: unknown;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (data === '__DONE__') {
+      es.close();
+      return;
+    }
+    if (typeof data === 'string' && data.length > 0) {
+      term.write(data);
+    }
+  };
+
+  es.onerror = () => es.close();
+
+  return { jobId, term, fit, wrapper, es };
+}
+
 export function LogViewer({ jobId, className }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
 
   useEffect(() => {
     const host = containerRef.current;
-    if (!host) return;
+    if (!host || !jobId) return;
 
-    const term = new Terminal({
-      convertEol: true,
-      cursorBlink: false,
-      disableStdin: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 12,
-      lineHeight: 1.25,
-      scrollback: 10_000,
-      theme: TERMINAL_THEME,
-      allowProposedApi: true,
-    });
+    if (!cached || cached.jobId !== jobId) {
+      disposeCache();
+      cached = createCache(jobId);
+    }
+    const entry = cached;
 
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(host);
+    host.appendChild(entry.wrapper);
 
     const safeFit = () => {
       try {
-        fit.fit();
+        entry.fit.fit();
       } catch {
         /* container not visible yet */
       }
     };
 
-    requestAnimationFrame(safeFit);
-
+    const raf = requestAnimationFrame(safeFit);
     const resizeObserver = new ResizeObserver(safeFit);
     resizeObserver.observe(host);
 
-    termRef.current = term;
-    fitRef.current = fit;
-
     return () => {
+      cancelAnimationFrame(raf);
       resizeObserver.disconnect();
-      term.dispose();
-      termRef.current = null;
-      fitRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const term = termRef.current;
-    if (!term) return;
-
-    term.clear();
-    if (!jobId) return;
-
-    const es = new EventSource(`/api/jobs/${jobId}/logs`);
-
-    es.onmessage = event => {
-      let data: unknown;
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      if (data === '__DONE__') {
-        es.close();
-        return;
-      }
-      if (typeof data === 'string' && data.length > 0) {
-        term.write(data);
+      // Detach the wrapper but keep the Terminal + EventSource alive in the
+      // module cache so a remount (e.g. navigating back to /runs) is instant.
+      if (entry.wrapper.parentNode === host) {
+        host.removeChild(entry.wrapper);
       }
     };
-
-    es.onerror = () => es.close();
-
-    return () => es.close();
   }, [jobId]);
 
   return (
