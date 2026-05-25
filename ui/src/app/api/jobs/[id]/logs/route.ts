@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { safeId } from '@/lib/utils';
 import fs from 'fs';
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = safeId(idStr);
   if (!id) {
@@ -67,6 +67,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           controller.close();
         }
       }, 1000);
+
+      req.signal.addEventListener(
+        'abort',
+        () => {
+          cleanup();
+          try {
+            controller.close();
+          } catch {
+            // already closed
+          }
+        },
+        { once: true },
+      );
     },
     cancel() {
       cleanup();
