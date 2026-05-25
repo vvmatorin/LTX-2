@@ -5,6 +5,7 @@ import { JOB_STATUS } from "@/lib/jobStatus";
 import { formatDuration } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useWorkerStatus } from "@/hooks/useWorkerStatus";
 import { X, GraduationCap, Layers, Package, AlertTriangle } from "lucide-react";
@@ -99,15 +100,21 @@ export function JobQueueList({ jobs, onCancel }: Props) {
 
             {(job.status === "queued" || job.status === "running") &&
               onCancel && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => onCancel(job.id)}
-                  title={job.status === "running" ? "Stop" : "Cancel"}
+                <ConfirmDialog
+                  title={job.status === "running" ? "Stop this job?" : "Cancel this job?"}
+                  description={`This will ${job.status === "running" ? "terminate" : "remove"} "${job.name}"${job.status === "running" ? ". Any unsaved progress will be lost." : " from the queue."}`}
+                  confirmLabel={job.status === "running" ? "Stop" : "Cancel Job"}
+                  onConfirm={() => onCancel(job.id)}
                 >
-                  <X className="h-3.5 w-3.5" />
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                    title={job.status === "running" ? "Stop" : "Cancel"}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </ConfirmDialog>
               )}
           </div>
         );

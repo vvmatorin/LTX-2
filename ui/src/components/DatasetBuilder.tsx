@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { Package, Plus, CheckCircle2, Square, CheckSquare, Trash2, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 
@@ -133,15 +134,21 @@ export function DatasetBuilder({ completedJobs, datasets, onBuildDataset, onDele
                 <Badge variant="secondary" className="text-[10px] shrink-0">
                   {ds.buckets.length} bucket{ds.buckets.length !== 1 ? "s" : ""}
                 </Badge>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                  onClick={() => onDeleteDataset(ds.id)}
-                  title="Delete dataset record"
+                <ConfirmDialog
+                  title="Delete dataset?"
+                  description={`This will remove the "${ds.name}" dataset record. The files on disk will not be deleted.`}
+                  confirmLabel="Delete"
+                  onConfirm={() => onDeleteDataset(ds.id)}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                    title="Delete dataset record"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </ConfirmDialog>
               </CardContent>
             </Card>
           );

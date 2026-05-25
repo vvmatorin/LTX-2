@@ -9,6 +9,7 @@ import { JobQueueList } from "@/components/JobQueueList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import {
@@ -17,7 +18,7 @@ import {
   ChevronDown,
   Clock,
   Activity,
-  Maximize2,
+  BarChart3,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -88,14 +89,34 @@ export default function RunsPage() {
                   </div>
                 </div>
               </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleStop(activeJob.id)}
-              >
-                <Square className="mr-1.5 h-3 w-3" />
-                Stop
-              </Button>
+              <div className="flex items-center gap-2">
+                {isTrainingJob && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!tb.ready}
+                    onClick={() => setTbFullscreen(true)}
+                  >
+                    {tb.running && !tb.ready ? (
+                      <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                    ) : (
+                      <BarChart3 className="mr-1.5 h-3 w-3" />
+                    )}
+                    TensorBoard
+                  </Button>
+                )}
+                <ConfirmDialog
+                  title="Stop running job?"
+                  description={`This will terminate "${activeJob.name}". Any unsaved progress will be lost.`}
+                  confirmLabel="Stop"
+                  onConfirm={() => handleStop(activeJob.id)}
+                >
+                  <Button variant="destructive" size="sm">
+                    <Square className="mr-1.5 h-3 w-3" />
+                    Stop
+                  </Button>
+                </ConfirmDialog>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -112,15 +133,6 @@ export default function RunsPage() {
                   />
                 </div>
               </div>
-            )}
-
-            {isTrainingJob && (
-              <TensorBoardPanel
-                running={tb.running}
-                error={tb.error}
-                fullscreen={tbFullscreen}
-                onToggleFullscreen={() => setTbFullscreen(!tbFullscreen)}
-              />
             )}
 
             <LogViewer jobId={activeJob.id} />
@@ -182,65 +194,17 @@ export default function RunsPage() {
               <X className="h-4 w-4" />
             </Button>
           </div>
-          <iframe
-            src="/tensorboard/"
-            className="flex-1 w-full border-0"
-            title="TensorBoard Fullscreen"
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TensorBoardPanel({
-  running,
-  error,
-  fullscreen,
-  onToggleFullscreen,
-}: {
-  running: boolean;
-  error: string | null;
-  fullscreen: boolean;
-  onToggleFullscreen: () => void;
-}) {
-  if (fullscreen) return null;
-
-  return (
-    <div className="rounded-lg border overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
-        <div className="flex items-center gap-2">
-          <div
-            className={cn(
-              "h-2 w-2 rounded-full",
-              running ? "bg-green-500" : "bg-yellow-500 animate-pulse",
-            )}
-          />
-          <span className="text-xs font-medium">
-            {running ? "TensorBoard" : "TensorBoard starting..."}
-          </span>
-        </div>
-        {running && (
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onToggleFullscreen}>
-            <Maximize2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
-      </div>
-      {error && (
-        <div className="px-3 py-2 text-xs text-destructive bg-destructive/5">
-          {error}
-        </div>
-      )}
-      {running ? (
-        <iframe
-          src="/tensorboard/"
-          className="w-full border-0"
-          style={{ height: "520px" }}
-          title="TensorBoard"
-        />
-      ) : (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          {tb.ready ? (
+            <iframe
+              src="/tensorboard/"
+              className="flex-1 w-full border-0"
+              title="TensorBoard Fullscreen"
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -4,6 +4,7 @@ import type { SourceFolder } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Folder, FileVideo, FileImage, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,15 +40,22 @@ export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props
           {folder.fileCount}
         </Badge>
 
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 w-7 p-0 text-destructive hover:text-destructive shrink-0"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          title="Remove folder"
+        <ConfirmDialog
+          title="Remove folder?"
+          description={`This will remove "${folder.path}" from the list. Existing preprocessed data and files on disk will not be affected.`}
+          confirmLabel="Remove"
+          onConfirm={onRemove}
         >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0 text-destructive hover:text-destructive shrink-0"
+            onClick={(e) => { e.stopPropagation(); }}
+            title="Remove folder"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </ConfirmDialog>
       </CardContent>
     </Card>
   );
