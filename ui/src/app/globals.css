@@ -170,3 +170,7 @@
     line-height: 1.45;
   }
 }
+
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
