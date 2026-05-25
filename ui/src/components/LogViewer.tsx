@@ -113,16 +113,13 @@ export function LogViewer({ jobId, className }: Props) {
   return (
     <div
       className={cn(
-        "surface-neo flex flex-col overflow-hidden rounded-2xl border border-border",
+        "surface-neo overflow-hidden rounded-2xl border border-border",
         className,
       )}
     >
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-        <span className="text-xs font-medium text-muted-foreground">Output</span>
-      </div>
       <div
         ref={containerRef}
-        className="flex-1 p-2"
+        className="p-2"
         style={{ background: TERMINAL_THEME.background, height: 360 }}
       />
     </div>
