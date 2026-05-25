@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
+import { initSchema } from "@/db/initSchema";
 
 const DB_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "ltx-ui.db");
@@ -30,6 +31,7 @@ export function getWorkerDb(): Database.Database {
   _db = new Database(DB_PATH);
   _db.pragma("journal_mode = WAL");
   _db.pragma("busy_timeout = 5000");
+  initSchema(_db);
   return _db;
 }
 
