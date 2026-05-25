@@ -2,13 +2,14 @@
 
 import type { TrainingConfig } from "@/lib/types";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Section,
   NumberField,
   TextField,
   SelectField,
   SwitchField,
-  TagInput,
   ListInput,
   VideoDimsField,
 } from "./fields";
@@ -27,6 +28,64 @@ interface GeneralSectionProps {
   config: TrainingConfig;
   onChange: (config: TrainingConfig) => void;
 }
+
+const TARGET_MODULE_PRESETS = [
+  {
+    id: "full" as const,
+    label: "Full",
+    description:
+      "All modules — broad patterns match video, audio & cross-modal",
+    modules: [
+      "to_k",
+      "to_q",
+      "to_v",
+      "to_out.0",
+      "to_gate_logits",
+      "net.0.proj",
+      "net.2",
+    ],
+  },
+  {
+    id: "video" as const,
+    label: "Video",
+    description:
+      "Video-only: self-attention, text cross-attention & feed-forward — no audio or cross-modal modules",
+    modules: [
+      "attn1.to_k",
+      "attn1.to_q",
+      "attn1.to_v",
+      "attn1.to_out.0",
+      "attn1.to_gate_logits",
+      "attn2.to_k",
+      "attn2.to_q",
+      "attn2.to_v",
+      "attn2.to_out.0",
+      "attn2.to_gate_logits",
+      "ff.net.0.proj",
+      "ff.net.2",
+    ],
+  },
+  {
+    id: "audio" as const,
+    label: "Audio",
+    description:
+      "Audio-only: self-attention, text cross-attention & feed-forward — no video or cross-modal modules",
+    modules: [
+      "audio_attn1.to_k",
+      "audio_attn1.to_q",
+      "audio_attn1.to_v",
+      "audio_attn1.to_out.0",
+      "audio_attn1.to_gate_logits",
+      "audio_attn2.to_k",
+      "audio_attn2.to_q",
+      "audio_attn2.to_v",
+      "audio_attn2.to_out.0",
+      "audio_attn2.to_gate_logits",
+      "audio_ff.net.0.proj",
+      "audio_ff.net.2",
+    ],
+  },
+] as const;
 
 export function ModelSection({ config, update }: SectionProps) {
   return (
@@ -63,6 +122,12 @@ export function ModelSection({ config, update }: SectionProps) {
 }
 
 export function LoraSection({ config, update }: SectionProps) {
+  const modules = config.lora.targetModules;
+  const sortedCurrent = [...modules].sort().join(",");
+  const activePreset = TARGET_MODULE_PRESETS.find(
+    (p) => [...p.modules].sort().join(",") === sortedCurrent,
+  );
+
   return (
     <Section title="LoRA">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -84,11 +149,35 @@ export function LoraSection({ config, update }: SectionProps) {
         />
       </div>
       <div className="space-y-2">
-        <Label className="text-xs">Target Modules</Label>
-        <TagInput
-          value={config.lora.targetModules}
-          onChange={(v) => update("lora", { targetModules: v })}
-        />
+        <Label className="text-xs">Target Layers</Label>
+        <div className="flex gap-2">
+          {TARGET_MODULE_PRESETS.map((preset) => (
+            <Button
+              key={preset.id}
+              type="button"
+              size="sm"
+              variant={activePreset?.id === preset.id ? "default" : "outline"}
+              onClick={() =>
+                update("lora", { targetModules: [...preset.modules] })
+              }
+              title={preset.description}
+              className="h-7 px-3 text-xs"
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {modules.map((mod) => (
+            <Badge
+              key={mod}
+              variant="secondary"
+              className="text-[10px] font-mono"
+            >
+              {mod}
+            </Badge>
+          ))}
+        </div>
       </div>
     </Section>
   );
