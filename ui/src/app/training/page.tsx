@@ -158,7 +158,12 @@ export default function TrainingPage() {
       appliedFromJob.current = fromJobId;
       apiFetch<ProcessingJob>(`/api/jobs/${fromJobId}`).then((job) => {
         if (job.type === "training") {
-          const restored = extractTrainingConfig(job.config);
+          const defaults = buildDefaultConfig(
+            settings?.modelPath || "",
+            settings?.textEncoderPath || "",
+            settings?.outputDir || "/tmp/ltx-training",
+          );
+          const restored = extractTrainingConfig(job.config, defaults);
           setConfig(restored.config);
           setGpuMode(restored.gpuMode);
           setGpuIds(restored.gpuIds);
