@@ -173,7 +173,7 @@ export default function TrainingPage() {
                     value={activeDataset}
                     onValueChange={(v) => v && setSelectedDataset(v)}
                   >
-                    <SelectTrigger className="text-xs">
+                    <SelectTrigger className="w-full text-xs">
                       <SelectValue placeholder="Select a dataset" />
                     </SelectTrigger>
                     <SelectContent>
