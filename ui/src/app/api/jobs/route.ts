@@ -56,8 +56,13 @@ export async function GET(req: Request) {
       const config = JSON.parse(r.config) as Record<string, unknown>;
       let outputExists: boolean | undefined;
       if (r.type === "preprocess" && r.status === "completed") {
-        const datasetPath = config.datasetPath as string | undefined;
-        outputExists = datasetPath ? fs.existsSync(datasetPath) : false;
+        const outputFolderPath = config.outputFolderPath as string | undefined;
+        if (outputFolderPath) {
+          outputExists = fs.existsSync(path.join(outputFolderPath, ".precomputed"));
+        } else {
+          const datasetPath = config.datasetPath as string | undefined;
+          outputExists = datasetPath ? fs.existsSync(datasetPath) : false;
+        }
       }
       return {
         ...r,
@@ -82,10 +87,20 @@ export async function POST(req: Request) {
     if (folder) {
       const datasetFilename =
         (config.datasetFilename as string) || "dataset.json";
-      config.datasetPath = path.join(folder.path, datasetFilename);
 
       const resolution = config.resolution as number;
       const frameCounts = (config.frameCounts as number[]) || [];
+
+      config.datasetPath = path.join(folder.path, datasetFilename);
+
+      const frameCount = frameCounts[0];
+      if (resolution && frameCount !== undefined) {
+        config.outputFolderPath = path.join(
+          folder.path,
+          "_buckets",
+          `${resolution}_${frameCount}`,
+        );
+      }
 
       if (resolution && frameCounts.length > 0) {
         try {

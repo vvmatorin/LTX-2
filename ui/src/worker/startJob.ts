@@ -85,6 +85,15 @@ export async function startJob(job: JobRow): Promise<number> {
   const pidFile = logFile.replace(/\.log$/, ".pid");
   fs.writeFileSync(pidFile, String(child.pid));
 
+  const precomputedSrc =
+    job.type === "preprocess" && config.folderPath
+      ? path.join(config.folderPath as string, ".precomputed")
+      : null;
+  const precomputedDest =
+    job.type === "preprocess" && config.outputFolderPath
+      ? path.join(config.outputFolderPath as string, ".precomputed")
+      : null;
+
   const jobId = job.id;
   child.on("close", (code) => {
     const footer = `\n[${nowIso()}] Process exited with code ${code ?? "null"}\n`;
@@ -93,6 +102,23 @@ export async function startJob(job: JobRow): Promise<number> {
     } catch {
       /* fd may already be closed */
     }
+
+    if (code === 0 && precomputedSrc && precomputedDest) {
+      try {
+        if (fs.existsSync(precomputedSrc)) {
+          fs.mkdirSync(path.dirname(precomputedDest), { recursive: true });
+          fs.renameSync(precomputedSrc, precomputedDest);
+          try {
+            fs.writeSync(logFd, `[${nowIso()}] Moved .precomputed → ${precomputedDest}\n`);
+          } catch { /* log fd may already be closed on retry */ }
+        }
+      } catch (err) {
+        try {
+          fs.writeSync(logFd, `[${nowIso()}] WARNING: could not move .precomputed: ${err}\n`);
+        } catch { /* ignore */ }
+      }
+    }
+
     fs.closeSync(logFd);
 
     const exitCodeFile = logFile.replace(/\.log$/, ".exitcode");
@@ -198,3 +224,4 @@ function hardLinkRecursive(src: string, dest: string) {
     }
   }
 }
+
