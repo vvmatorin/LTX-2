@@ -6,6 +6,7 @@ import {
   LoraSection,
   StrategySection,
   OptimizationSection,
+  FlowMatchingSection,
   ValidationSection,
   CheckpointsSection,
   GeneralSection,
@@ -36,6 +37,7 @@ export function TrainingConfigForm({ config, onChange }: Props) {
       <LoraSection config={config} update={update} />
       <StrategySection config={config} update={update} />
       <OptimizationSection config={config} update={update} />
+      <FlowMatchingSection config={config} update={update} />
       <ValidationSection config={config} update={update} />
       <CheckpointsSection config={config} update={update} />
       <GeneralSection config={config} onChange={onChange} />

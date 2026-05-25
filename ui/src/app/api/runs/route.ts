@@ -97,9 +97,12 @@ function buildYamlConfig(
       gradient_accumulation_steps: uiConfig.optimization?.gradientAccumulationSteps ?? 1,
       max_grad_norm: uiConfig.optimization?.maxGradNorm ?? 1.0,
       optimizer_type: uiConfig.optimization?.optimizerType || "muon",
-      optimizer_params: uiConfig.optimization?.optimizerType === "muon"
-        ? { adjust_lr_fn: "match_rms_adamw", weight_decay: 0.0001 }
-        : undefined,
+      optimizer_params: {
+        weight_decay: uiConfig.optimization?.weightDecay ?? 0.0001,
+        ...(uiConfig.optimization?.optimizerType === "muon"
+          ? { adjust_lr_fn: "match_rms_adamw" }
+          : {}),
+      },
       scheduler_type: uiConfig.optimization?.schedulerType || "lambda_warmup",
       scheduler_params: {
         num_warmup_steps: uiConfig.optimization?.numWarmupSteps ?? 560,
@@ -137,9 +140,9 @@ function buildYamlConfig(
       no_resume: true,
     },
     flow_matching: {
-      timestep_sampling_mode: "uniform",
+      timestep_sampling_mode: uiConfig.flowMatching?.timestepSamplingMode || "uniform",
       timestep_sampling_params: {},
-      timestep_loss_weighting: "weighted",
+      timestep_loss_weighting: uiConfig.flowMatching?.timestepLossWeighting || "weighted",
     },
     tensorboard: {
       enabled: true,

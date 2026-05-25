@@ -67,9 +67,14 @@ function buildDefaultConfig(
       gradientAccumulationSteps: 1,
       maxGradNorm: 1.0,
       optimizerType: "muon",
+      weightDecay: 0.0001,
       schedulerType: "lambda_warmup",
       numWarmupSteps: 560,
       enableGradientCheckpointing: true,
+    },
+    flowMatching: {
+      timestepSamplingMode: "uniform",
+      timestepLossWeighting: "weighted",
     },
     validation: {
       prompts: [],

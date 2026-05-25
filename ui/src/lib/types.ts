@@ -79,10 +79,15 @@ export interface TrainingConfig {
     gradientAccumulationSteps: number;
     maxGradNorm: number;
     optimizerType: string;
+    weightDecay: number;
     optimizerParams?: Record<string, unknown>;
     schedulerType: string;
     numWarmupSteps: number;
     enableGradientCheckpointing: boolean;
+  };
+  flowMatching: {
+    timestepSamplingMode: "uniform" | "shifted_logit_normal";
+    timestepLossWeighting: "none" | "bell" | "weighted";
   };
   data?: {
     preprocessedDataRoot?: string;

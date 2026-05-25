@@ -266,6 +266,13 @@ export function OptimizationSection({ config, update }: SectionProps) {
           value={config.optimization.numWarmupSteps}
           onChange={(v) => update("optimization", { numWarmupSteps: v })}
         />
+        <NumberField
+          label="Weight Decay"
+          value={config.optimization.weightDecay}
+          onChange={(v) => update("optimization", { weightDecay: v })}
+          step={0.0001}
+          mono
+        />
         <SelectField
           label="Optimizer"
           value={config.optimization.optimizerType}
@@ -352,16 +359,18 @@ export function ValidationSection({ config, update }: SectionProps) {
             onChange={(v) => update("validation", { seed: v })}
           />
         </div>
-        <SwitchField
-          label="Generate Audio"
-          checked={config.validation.generateAudio}
-          onChange={(v) => update("validation", { generateAudio: v })}
-        />
-        <SwitchField
-          label="Skip Initial Validation"
-          checked={config.validation.skipInitialValidation}
-          onChange={(v) => update("validation", { skipInitialValidation: v })}
-        />
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          <SwitchField
+            label="Generate Audio"
+            checked={config.validation.generateAudio}
+            onChange={(v) => update("validation", { generateAudio: v })}
+          />
+          <SwitchField
+            label="Skip Initial Validation"
+            checked={config.validation.skipInitialValidation}
+            onChange={(v) => update("validation", { skipInitialValidation: v })}
+          />
+        </div>
       </div>
     </Section>
   );
@@ -389,6 +398,38 @@ export function CheckpointsSection({ config, update }: SectionProps) {
             { value: "bfloat16", label: "bfloat16" },
             { value: "float16", label: "float16" },
             { value: "float32", label: "float32" },
+          ]}
+        />
+      </div>
+    </Section>
+  );
+}
+
+export function FlowMatchingSection({ config, update }: SectionProps) {
+  return (
+    <Section title="Flow Matching">
+      <div className="grid grid-cols-2 gap-4">
+        <SelectField
+          label="Timestep Sampling"
+          value={config.flowMatching.timestepSamplingMode}
+          onChange={(v) =>
+            update("flowMatching", { timestepSamplingMode: v })
+          }
+          options={[
+            { value: "uniform", label: "Uniform" },
+            { value: "shifted_logit_normal", label: "Shifted Logit Normal" },
+          ]}
+        />
+        <SelectField
+          label="Loss Weighting"
+          value={config.flowMatching.timestepLossWeighting}
+          onChange={(v) =>
+            update("flowMatching", { timestepLossWeighting: v })
+          }
+          options={[
+            { value: "none", label: "None" },
+            { value: "bell", label: "Bell" },
+            { value: "weighted", label: "Weighted" },
           ]}
         />
       </div>

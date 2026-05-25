@@ -122,7 +122,7 @@ export function SelectField({
     <div className="space-y-2">
       <Label className="text-xs">{label}</Label>
       <Select value={value} onValueChange={(v) => { if (v) onChange(v); }}>
-        <SelectTrigger className="text-xs">
+        <SelectTrigger className="w-full text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
