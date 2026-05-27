@@ -3,8 +3,10 @@ import { db } from '@/db';
 import { jobs } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { safeId } from '@/lib/utils';
+import { getSetting } from '@/lib/settings';
 import fs from 'fs';
 
+const WORKER_STALE_MS = 6000;
 const HEAD_BYTES = 256 * 1024;
 const TAIL_BYTES = 512 * 1024;
 const THRESHOLD = HEAD_BYTES + TAIL_BYTES;
@@ -100,6 +102,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           controller.enqueue(encoder.encode(`data: ${JSON.stringify('__DONE__')}\n\n`));
           cleanup();
           controller.close();
+          return;
+        }
+
+        if (currentJob.status === 'running') {
+          const lastSeen = getSetting('worker_heartbeat');
+          const stale = !lastSeen || Date.now() - new Date(lastSeen).getTime() > WORKER_STALE_MS;
+          if (stale) {
+            cleanup();
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          }
         }
       }, 1000);
 
