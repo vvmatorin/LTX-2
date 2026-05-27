@@ -121,7 +121,9 @@ export function LogViewer({ jobId, className }: Props) {
     const host = containerRef.current;
     if (!host || !jobId) return;
 
-    if (!cached || cached.jobId !== jobId) {
+    const needsNew = !cached || cached.jobId !== jobId || cached.es.readyState === EventSource.CLOSED;
+
+    if (needsNew) {
       disposeCache();
       cached = createCache(jobId, host);
     } else if (cached.wrapper.parentNode !== host) {

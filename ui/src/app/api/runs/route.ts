@@ -3,7 +3,7 @@ import { db } from '@/db';
 import { jobs, trainingDatasets } from '@/db/schema';
 import { nextQueuePosition } from '@/db/queries';
 import { eq } from 'drizzle-orm';
-import { parseJobConfig } from '@/lib/utils';
+import { parseJobConfig, toErrorMessage } from '@/lib/utils';
 import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
@@ -30,18 +30,13 @@ export async function POST(req: Request) {
   try {
     fs.mkdirSync(outputDir, { recursive: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: `Failed to create output directory: ${err instanceof Error ? err.message : err}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `Failed to create output directory: ${toErrorMessage(err)}` }, { status: 500 });
   }
 
   let preprocessedDataRoot: string | null = null;
-  if (datasetName) {
-    const dataset = db.select().from(trainingDatasets).where(eq(trainingDatasets.name, datasetName)).get();
-    if (dataset) {
-      preprocessedDataRoot = path.join(dataset.path, '.precomputed');
-    }
+  const dataset = db.select().from(trainingDatasets).where(eq(trainingDatasets.name, datasetName)).get();
+  if (dataset) {
+    preprocessedDataRoot = path.join(dataset.path, '.precomputed');
   }
   if (!preprocessedDataRoot && uiConfig.data?.preprocessedDataRoot) {
     preprocessedDataRoot = uiConfig.data.preprocessedDataRoot;
@@ -52,10 +47,7 @@ export async function POST(req: Request) {
   try {
     fs.writeFileSync(configPath, YAML.stringify(yamlConfig), 'utf-8');
   } catch (err) {
-    return NextResponse.json(
-      { error: `Failed to write config file: ${err instanceof Error ? err.message : err}` },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: `Failed to write config file: ${toErrorMessage(err)}` }, { status: 500 });
   }
 
   const result = db

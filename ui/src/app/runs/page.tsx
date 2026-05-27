@@ -15,7 +15,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Loader2, Square, ChevronDown, Clock, Activity, BarChart3, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, toErrorMessage } from '@/lib/utils';
 
 // xterm is ~150KB and only used while a job is active; load it lazily.
 const LogViewer = dynamic(() => import('@/components/LogViewer').then(m => m.LogViewer), {
@@ -32,18 +32,20 @@ export default function RunsPage() {
   const { jobs, stopJob, error: jobsError } = useJobs();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tbFullscreen, setTbFullscreen] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
 
-  const activeJob = jobs.find(j => j.status === 'running') ?? null;
+  const activeJob = useMemo(() => jobs.find(j => j.status === 'running') ?? null, [jobs]);
   const queuedJobs = useMemo(() => jobs.filter(j => j.status === 'queued'), [jobs]);
   const historyJobs = useMemo(() => jobs.filter(j => ['completed', 'failed', 'cancelled'].includes(j.status)), [jobs]);
 
-  const tb = useTensorboard(activeJob);
+  const { running: tbRunning, ready: tbReady } = useTensorboard(activeJob);
 
   const handleStop = async (id: number) => {
+    setStopError(null);
     try {
       await stopJob(id);
     } catch (err) {
-      console.error('Failed to stop job:', err);
+      setStopError(toErrorMessage(err));
     }
   };
 
@@ -53,9 +55,9 @@ export default function RunsPage() {
     <div className="space-y-6 p-3 md:p-4">
       <PageHeader title="Runs" subtitle="Monitor active jobs, manage the queue, and review history" />
 
-      {jobsError && (
+      {(jobsError || stopError) && (
         <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
-          {jobsError instanceof Error ? jobsError.message : String(jobsError)}
+          {jobsError ? toErrorMessage(jobsError) : stopError}
         </div>
       )}
 
@@ -84,8 +86,8 @@ export default function RunsPage() {
               </div>
               <div className="flex items-center gap-2">
                 {activeJob.type === 'training' && (
-                  <Button variant="outline" size="sm" disabled={!tb.ready} onClick={() => setTbFullscreen(true)}>
-                    {tb.running && !tb.ready ? (
+                  <Button variant="outline" size="sm" disabled={!tbReady} onClick={() => setTbFullscreen(true)}>
+                    {tbRunning && !tbReady ? (
                       <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                     ) : (
                       <BarChart3 className="mr-1.5 h-3 w-3" />
@@ -171,7 +173,7 @@ export default function RunsPage() {
               <X className="h-4 w-4" />
             </Button>
           </div>
-          {tb.ready ? (
+          {tbReady ? (
             <iframe src="/tensorboard/" className="w-full flex-1 border-0" title="TensorBoard Fullscreen" />
           ) : (
             <div className="flex flex-1 items-center justify-center">

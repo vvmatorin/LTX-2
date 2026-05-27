@@ -32,3 +32,7 @@ export function safeId(str: string | null | undefined): number | null {
   const n = Number(str);
   return Number.isFinite(n) ? n : null;
 }
+
+export function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

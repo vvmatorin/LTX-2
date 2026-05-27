@@ -48,9 +48,3 @@ export const trainingDatasets = sqliteTable('training_datasets', {
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
 });
-
-export type SourceFolder = typeof sourceFolders.$inferSelect;
-export type NewSourceFolder = typeof sourceFolders.$inferInsert;
-export type Job = typeof jobs.$inferSelect;
-export type NewJob = typeof jobs.$inferInsert;
-export type TrainingDataset = typeof trainingDatasets.$inferSelect;

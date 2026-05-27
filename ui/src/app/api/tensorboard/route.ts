@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSetting, setSetting } from '@/lib/settings';
+import { toErrorMessage } from '@/lib/utils';
 import { spawn } from 'child_process';
 
 // Defaults must match run.sh and ui/next.config.ts.
@@ -40,15 +41,15 @@ function killTbProcess(): void {
 
 export async function GET() {
   const pidStr = getSetting('tbPid');
+  const pid = pidStr ? parseInt(pidStr, 10) : 0;
   const port = parseInt(getSetting('tbPort') || '0', 10);
   const logDir = getSetting('tbLogDir') || null;
   const storedPrefix = getSetting('tbPathPrefix') || '';
 
-  if (!pidStr || !parseInt(pidStr, 10)) {
+  if (!pid) {
     return NextResponse.json({ running: false, port: 0, logDir: null });
   }
 
-  const pid = parseInt(pidStr, 10);
   if (!isProcessAlive(pid)) {
     clearTbState();
     return NextResponse.json({ running: false, port: 0, logDir: null });
@@ -108,8 +109,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ running: true, port: parseInt(TB_PORT, 10), logDir });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(err) }, { status: 500 });
   }
 }
 

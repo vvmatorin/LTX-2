@@ -97,9 +97,7 @@ export function extractTrainingConfig(
   gpuIds: string;
   datasetName: string;
 } {
-  const { configPath: _cp, preprocessedDataRoot: _pdr, gpuMode, gpuIds, datasetName, ...rest } = jobConfig;
-  void _cp;
-  void _pdr;
+  const { configPath: _configPath, preprocessedDataRoot: _dataRoot, gpuMode, gpuIds, datasetName, ...rest } = jobConfig;
 
   return {
     config: deepMerge(defaults as unknown as Record<string, unknown>, rest) as unknown as TrainingConfig,

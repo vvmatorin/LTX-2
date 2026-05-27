@@ -10,6 +10,7 @@ const WORKER_STALE_MS = 6000;
 const HEAD_BYTES = 256 * 1024;
 const TAIL_BYTES = 512 * 1024;
 const THRESHOLD = HEAD_BYTES + TAIL_BYTES;
+const MAX_CHUNK = 64 * 1024;
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
@@ -80,11 +81,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         try {
           const stat = fs.statSync(logFile);
           if (stat.size > offset) {
+            const toRead = Math.min(stat.size - offset, MAX_CHUNK);
             const fd = fs.openSync(logFile, 'r');
-            const buf = Buffer.alloc(stat.size - offset);
-            fs.readSync(fd, buf, 0, buf.length, offset);
+            const buf = Buffer.alloc(toRead);
+            fs.readSync(fd, buf, 0, toRead, offset);
             fs.closeSync(fd);
-            offset = stat.size;
+            offset += toRead;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(buf.toString('utf-8'))}\n\n`));
           }
         } catch {

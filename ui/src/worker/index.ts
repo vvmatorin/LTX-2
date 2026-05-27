@@ -52,7 +52,11 @@ async function tick() {
   }
 }
 
-setInterval(tick, POLL_INTERVAL_MS);
+async function schedule(): Promise<void> {
+  await tick();
+  setTimeout(schedule, POLL_INTERVAL_MS);
+}
+schedule();
 
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));

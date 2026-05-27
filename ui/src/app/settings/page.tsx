@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/PageHeader';
 import { Save, Loader2 } from 'lucide-react';
+import { toErrorMessage } from '@/lib/utils';
 import type { AppSettings } from '@/lib/types';
 
 const FIELDS: Array<{
@@ -50,7 +51,7 @@ export default function SettingsPage() {
     return (
       <div className="flex items-center justify-center p-12">
         {isError ? (
-          <p className="text-destructive text-sm">{error instanceof Error ? error.message : 'Failed to load'}</p>
+          <p className="text-destructive text-sm">{error ? toErrorMessage(error) : 'Failed to load'}</p>
         ) : (
           <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
         )}
@@ -91,7 +92,7 @@ function SettingsForm({
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch {
-      // saveError prop will render below
+      /* handled by saveError */
     }
   };
 
@@ -132,7 +133,7 @@ function SettingsForm({
 
       {saveError && (
         <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
-          {saveError instanceof Error ? saveError.message : String(saveError)}
+          {toErrorMessage(saveError)}
         </div>
       )}
 

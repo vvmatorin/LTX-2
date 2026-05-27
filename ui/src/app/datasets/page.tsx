@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import type { DatasetBucket } from '@/lib/types';
+import { toErrorMessage } from '@/lib/utils';
 
 import { useFolders } from '@/hooks/useFolders';
 import { useJobs } from '@/hooks/useJobs';
@@ -32,8 +33,6 @@ export default function DatasetsPage() {
   const [buildError, setBuildError] = useState<string | null>(null);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
   const [refreshingFolderId, setRefreshingFolderId] = useState<number | null>(null);
-
-  const toErrorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
   const effectiveFolderId = selectedFolderId ?? folders[0]?.id ?? null;
   const selectedFolder = folders.find(f => f.id === effectiveFolderId) ?? null;
@@ -104,6 +103,15 @@ export default function DatasetsPage() {
     }
   };
 
+  const handleDeleteDataset = async (id: number) => {
+    setBuildError(null);
+    try {
+      await deleteDataset(id);
+    } catch (err) {
+      setBuildError(toErrorMessage(err));
+    }
+  };
+
   const handleBuildDataset = async (name: string, buckets: DatasetBucket[]) => {
     setBuildError(null);
     const datasetDir = settings?.datasetDir?.replace(/\/+$/, '') || '/tmp/ltx-datasets';
@@ -112,8 +120,7 @@ export default function DatasetsPage() {
     try {
       await createDataset({ name, path: datasetPath, buckets });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setBuildError(msg);
+      setBuildError(toErrorMessage(err));
       throw err;
     }
   };
@@ -127,7 +134,7 @@ export default function DatasetsPage() {
 
       {fetchError && (
         <div className="border-destructive/30 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
-          {fetchError instanceof Error ? fetchError.message : String(fetchError)}
+          {toErrorMessage(fetchError)}
         </div>
       )}
 
@@ -200,14 +207,7 @@ export default function DatasetsPage() {
             completedJobs={completedJobs}
             datasets={datasets}
             onBuildDataset={handleBuildDataset}
-            onDeleteDataset={async id => {
-              setBuildError(null);
-              try {
-                await deleteDataset(id);
-              } catch (err) {
-                setBuildError(toErrorMessage(err));
-              }
-            }}
+            onDeleteDataset={handleDeleteDataset}
             onRefresh={handleRefresh}
             isRefreshing={isManualRefreshing}
           />
