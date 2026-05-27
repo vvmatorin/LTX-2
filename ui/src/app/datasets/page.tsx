@@ -19,7 +19,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { FolderPlus } from 'lucide-react';
 
 export default function DatasetsPage() {
-  const { folders, addFolder, removeFolder, error: foldersError } = useFolders();
+  const { folders, addFolder, removeFolder, refreshFolder, error: foldersError } = useFolders();
   const { jobs, createJob, refreshJobs, error: jobsError } = useJobs();
   const { datasets, createDataset, deleteDataset, refreshDatasets, error: datasetsError } = useDatasets();
   const { settings } = useSettings();
@@ -31,6 +31,7 @@ export default function DatasetsPage() {
   const [folderError, setFolderError] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [refreshingFolderId, setRefreshingFolderId] = useState<number | null>(null);
 
   const toErrorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -69,6 +70,17 @@ export default function DatasetsPage() {
       setFolderError(toErrorMessage(err));
     }
     if (effectiveFolderId === id) setSelectedFolderId(null);
+  };
+
+  const handleRefreshFolder = async (id: number) => {
+    setRefreshingFolderId(id);
+    try {
+      await refreshFolder(id);
+    } catch (err) {
+      setFolderError(toErrorMessage(err));
+    } finally {
+      setRefreshingFolderId(null);
+    }
   };
 
   const handleQueueProcessing = async (
@@ -155,6 +167,8 @@ export default function DatasetsPage() {
                 selected={effectiveFolderId === folder.id}
                 onSelect={() => setSelectedFolderId(folder.id)}
                 onRemove={() => handleRemoveFolder(folder.id)}
+                onRefresh={() => handleRefreshFolder(folder.id)}
+                isRefreshing={refreshingFolderId === folder.id}
               />
             ))}
             {folders.length === 0 && (

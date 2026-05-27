@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Folder, FileVideo, FileImage, Trash2 } from 'lucide-react';
+import { Folder, FileVideo, FileImage, Trash2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -13,9 +13,11 @@ interface Props {
   selected: boolean;
   onSelect: () => void;
   onRemove: () => void;
+  onRefresh: () => void;
+  isRefreshing: boolean;
 }
 
-export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props) {
+export function SourceFolderCard({ folder, selected, onSelect, onRemove, onRefresh, isRefreshing }: Props) {
   const Icon = folder.mediaType === 'images' ? FileImage : FileVideo;
 
   return (
@@ -37,6 +39,20 @@ export function SourceFolderCard({ folder, selected, onSelect, onRemove }: Props
           <Icon className="mr-1 h-3 w-3" />
           {folder.fileCount}
         </Badge>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-muted-foreground hover:text-foreground h-7 w-7 shrink-0 p-0"
+          onClick={e => {
+            e.stopPropagation();
+            onRefresh();
+          }}
+          disabled={isRefreshing}
+          title="Refresh folder & discover buckets"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+        </Button>
 
         <ConfirmDialog
           title="Remove folder?"

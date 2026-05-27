@@ -5,6 +5,10 @@ import { eq } from 'drizzle-orm';
 import { safeId } from '@/lib/utils';
 import fs from 'fs';
 
+const HEAD_BYTES = 256 * 1024;
+const TAIL_BYTES = 512 * 1024;
+const THRESHOLD = HEAD_BYTES + TAIL_BYTES;
+
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: idStr } = await params;
   const id = safeId(idStr);
@@ -38,6 +42,37 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const stream = new ReadableStream({
     start(controller) {
+      try {
+        const initialStat = fs.statSync(logFile);
+        if (initialStat.size > THRESHOLD) {
+          const fd = fs.openSync(logFile, 'r');
+          const headBuf = Buffer.alloc(HEAD_BYTES);
+          const headRead = fs.readSync(fd, headBuf, 0, HEAD_BYTES, 0);
+          fs.closeSync(fd);
+
+          let headEnd = headRead;
+          while (headEnd > 0 && headBuf[headEnd - 1] !== 0x0a) headEnd--;
+          if (headEnd === 0) headEnd = headRead;
+
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(headBuf.slice(0, headEnd).toString('utf-8'))}\n\n`),
+          );
+
+          const rawTailStart = initialStat.size - TAIL_BYTES;
+          const fd2 = fs.openSync(logFile, 'r');
+          const alignBuf = Buffer.alloc(256);
+          const alignRead = fs.readSync(fd2, alignBuf, 0, 256, rawTailStart);
+          fs.closeSync(fd2);
+          const nlIdx = alignBuf.indexOf(0x0a, 0);
+          offset = rawTailStart + (nlIdx !== -1 && nlIdx < alignRead ? nlIdx + 1 : 0);
+
+          const skipped = offset - headEnd;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify('__GAP:' + skipped)}\n\n`));
+        }
+      } catch {
+        // Fall through to normal full-file streaming if anything goes wrong
+      }
+
       const sendChunk = () => {
         if (closed) return;
         try {

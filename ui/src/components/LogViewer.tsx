@@ -98,6 +98,12 @@ function createCache(jobId: number, host: HTMLElement): CachedTerminal {
       es.close();
       return;
     }
+    if (typeof data === 'string' && data.startsWith('__GAP:')) {
+      const skipped = parseInt(data.slice(6), 10);
+      const mb = (skipped / (1024 * 1024)).toFixed(1);
+      term.write(`\r\n\x1b[2m\x1b[33m${'─'.repeat(20)} ${mb} MB omitted ${'─'.repeat(20)}\x1b[0m\r\n\r\n`);
+      return;
+    }
     if (typeof data === 'string' && data.length > 0) {
       term.write(data);
     }
