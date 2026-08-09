@@ -41,17 +41,22 @@ class TrainingStrategyConfigBase(BaseModel):
 
 @dataclass
 class ModelInputs:
-    """Container for model inputs using the Modality-based interface."""
+    """Container for model inputs using the Modality-based interface.
 
-    video: Modality
+    A modality is ``None`` when the batch carries no data for it. The transformer
+    skips that branch entirely (including both cross-modal attention directions),
+    so nothing is trained against a placeholder stream.
+    """
+
+    video: Modality | None
     audio: Modality | None
 
-    # Training targets (for loss computation)
-    video_targets: Tensor
+    # Training targets (for loss computation). None when the modality is absent.
+    video_targets: Tensor | None
     audio_targets: Tensor | None
 
-    # Masks for loss computation
-    video_loss_mask: Tensor  # Boolean mask: True = compute loss for this token
+    # Masks for loss computation. None when the modality is absent.
+    video_loss_mask: Tensor | None  # Boolean mask: True = compute loss for this token
     audio_loss_mask: Tensor | None
 
     # Optional per-sample loss weights derived from sigma (e.g. bell weighting).
@@ -60,6 +65,14 @@ class ModelInputs:
 
     # Metadata needed for loss computation in some strategies
     ref_seq_len: int | None = None  # For IC-LoRA: length of reference sequence
+
+    @property
+    def sigma(self) -> Tensor:
+        """Per-sample sigma, shape [B,]. Both modalities share it, so read whichever is present."""
+        modality = self.video if self.video is not None else self.audio
+        if modality is None:
+            raise ValueError("ModelInputs must carry at least one modality")
+        return modality.sigma
 
 
 class TrainingStrategy(ABC):
@@ -124,14 +137,14 @@ class TrainingStrategy(ABC):
     @abstractmethod
     def compute_loss(
         self,
-        video_pred: Tensor,
+        video_pred: Tensor | None,
         audio_pred: Tensor | None,
         inputs: ModelInputs,
     ) -> Tensor:
         """Compute the training loss.
         Args:
-            video_pred: Video prediction from the transformer model
-            audio_pred: Audio prediction from the transformer model (None for video-only)
+            video_pred: Video prediction from the transformer model (None for audio-only batches)
+            audio_pred: Audio prediction from the transformer model (None for video-only batches)
             inputs: The prepared model inputs containing targets and masks
         Returns:
             Per-sample loss tensor of shape [B,].

@@ -68,6 +68,7 @@ export interface TrainingConfig {
     // text_to_video only
     withAudio: boolean;
     audioLatentsDir: string;
+    audioLossWeight?: number;
     hFlip: boolean;
     // shared
     temporalBoundaryLossWeight: number;
@@ -95,6 +96,7 @@ export interface TrainingConfig {
   flowMatching: {
     timestepSamplingMode: 'uniform' | 'shifted_logit_normal';
     timestepLossWeighting: 'none' | 'bell' | 'weighted';
+    timestepLossWeightingGamma?: number;
   };
   data?: {
     preprocessedDataRoot?: string;

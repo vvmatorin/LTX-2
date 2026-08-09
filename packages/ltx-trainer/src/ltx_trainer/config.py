@@ -529,6 +529,18 @@ class FlowMatchingConfig(ConfigBaseModel):
         "'weighted': empirical 1000-bin lookup table from ai-toolkit's default_weighing_scheme.",
     )
 
+    timestep_loss_weighting_gamma: float = Field(
+        default=1.0,
+        description="Temperature on the selected weighting curve: the weights are raised to this "
+        "power and renormalized back to mean 1, so the overall gradient scale (and hence the "
+        "effective learning rate) is unchanged. 1.0 leaves the curve as-is. Values > 1 sharpen it "
+        "around its peak and suppress its tails; values < 1 flatten it toward uniform, and 0.0 is "
+        "equivalent to 'none'. For 'weighted' (peak at sigma≈0.88) raising gamma concentrates the "
+        "budget in sigma≈0.7-0.9 and cuts the low-sigma share without inflating the near-pure-noise "
+        "sigma>0.95 region. No effect when timestep_loss_weighting is 'none'.",
+        ge=0.0,
+    )
+
 
 class LtxTrainerConfig(ConfigBaseModel):
     """Unified configuration for LTXV training"""
