@@ -94,7 +94,7 @@ export default function DatasetsPage() {
     for (const c of configs) {
       await createJob({
         type: 'preprocess',
-        name: `Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/${c.resolution}_${c.frameCount} [${stream}]`,
+        name: `[${stream}] Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/${stream}/${c.resolution}_${c.frameCount}`,
         config: {
           folderId: effectiveFolderId,
           modelStream: stream,
@@ -115,7 +115,7 @@ export default function DatasetsPage() {
   const handleQueueAudioProcessing = async (config: AudioConfig) => {
     await createJob({
       type: 'preprocess',
-      name: `Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/audio_only [${stream}]`,
+      name: `[${stream}] Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/${stream}/audio_only`,
       config: {
         folderId: effectiveFolderId,
         modelStream: stream,

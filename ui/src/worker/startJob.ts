@@ -88,9 +88,7 @@ export async function startJob(job: JobRow): Promise<number> {
   const precomputedSrc =
     isPreprocess && config.folderPath ? path.join(config.folderPath as string, '.precomputed', stream) : null;
   const precomputedDest =
-    isPreprocess && config.outputFolderPath
-      ? path.join(config.outputFolderPath as string, '.precomputed', stream)
-      : null;
+    isPreprocess && config.outputFolderPath ? path.join(config.outputFolderPath as string, '.precomputed') : null;
 
   const jobId = job.id;
   child.on('close', code => {
@@ -215,25 +213,25 @@ function pushModelArgs(args: string[], config: Record<string, unknown>, opts: { 
 
 function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: number): number {
   const db = getWorkerDb();
-  const sources = (config.sources as Array<{ dir: string; stream: string }>) || [];
+  const sourceDirs = (config.sourceDirs as string[]) || [];
   const destDir = (config.destDir as string) || '';
 
-  fs.writeSync(logFd, `[${nowIso()}] Merging ${sources.length} bucket(s) into ${destDir}\n`);
+  fs.writeSync(logFd, `[${nowIso()}] Merging ${sourceDirs.length} bucket(s) into ${destDir} [${config.modelStream}]\n`);
 
   try {
-    for (const { dir, stream } of sources) {
-      const pre = path.join(dir, '.precomputed', stream);
-      const tag = bucketTag(dir);
-      fs.writeSync(logFd, `  Source ${dir} [${stream}] -> ${tag}\n`);
+    for (const src of sourceDirs) {
+      const pre = path.join(src, '.precomputed');
+      const tag = bucketTag(src);
+      fs.writeSync(logFd, `  Source ${src} -> ${tag}\n`);
 
       for (const subdir of ['latents', 'latents_h_flip', 'conditions', 'audio_latents', 'reference_latents']) {
         const srcDir = path.join(pre, subdir);
         if (!fs.existsSync(srcDir)) continue;
 
-        const dest = path.join(destDir, '.precomputed', stream, subdir, tag);
+        const dest = path.join(destDir, '.precomputed', subdir, tag);
         fs.mkdirSync(dest, { recursive: true });
         hardLinkRecursive(srcDir, dest);
-        fs.writeSync(logFd, `  Linked ${stream}/${subdir}/${tag}\n`);
+        fs.writeSync(logFd, `  Linked ${subdir}/${tag}\n`);
       }
     }
 

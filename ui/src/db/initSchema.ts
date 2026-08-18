@@ -33,6 +33,7 @@ const SCHEMA_SQL = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     path TEXT NOT NULL,
+    model_stream TEXT NOT NULL,
     buckets TEXT NOT NULL,
     created_at TEXT NOT NULL
   );

@@ -43,6 +43,7 @@ export const trainingDatasets = sqliteTable('training_datasets', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull().unique(),
   path: text('path').notNull(),
+  modelStream: text('model_stream', { enum: ['ltx-2.3', 'ltx-2.5'] }).notNull(),
   buckets: text('buckets').notNull(),
   createdAt: text('created_at')
     .notNull()

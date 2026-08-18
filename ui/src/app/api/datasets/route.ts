@@ -6,7 +6,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { parseJobConfig, safeId } from '@/lib/utils';
 import fs from 'fs';
 import path from 'path';
-import { MODEL_STREAMS, type DatasetBucket } from '@/lib/types';
+import type { DatasetBucket, ModelStream } from '@/lib/types';
 
 export async function GET() {
   const rows = db.select().from(trainingDatasets).all();
@@ -21,18 +21,12 @@ export async function GET() {
   const buildStatusByDataset = new Map(activeBuilds.map(j => [j.name.slice('Dataset: '.length), j.status]));
 
   return NextResponse.json(
-    rows.map(r => {
-      const streams = r.path
-        ? MODEL_STREAMS.filter(stream => fs.existsSync(path.join(r.path, '.precomputed', stream)))
-        : [];
-      return {
-        ...r,
-        buckets: parseJobConfig(r.buckets) ?? [],
-        pathExists: streams.length > 0,
-        streams,
-        buildStatus: buildStatusByDataset.get(r.path) ?? null,
-      };
-    }),
+    rows.map(r => ({
+      ...r,
+      buckets: parseJobConfig(r.buckets) ?? [],
+      pathExists: r.path ? fs.existsSync(path.join(r.path, '.precomputed')) : false,
+      buildStatus: buildStatusByDataset.get(r.path) ?? null,
+    })),
   );
 }
 
@@ -61,11 +55,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const sources = buckets
-    .filter(b => Boolean(b.folderPath) && Boolean(b.stream))
-    .map(b => ({ dir: b.folderPath, stream: b.stream }));
+  const modelStream = (buckets[0]?.stream ?? 'ltx-2.5') as ModelStream;
 
-  if (sources.length === 0) {
+  const sourceDirs = buckets.map(b => b.folderPath).filter((p): p is string => Boolean(p));
+
+  if (sourceDirs.length === 0) {
     return NextResponse.json({ error: 'Dataset has no source buckets with folder paths' }, { status: 400 });
   }
 
@@ -74,6 +68,7 @@ export async function POST(req: Request) {
     .values({
       name: body.name as string,
       path: body.path as string,
+      modelStream,
       buckets: JSON.stringify(buckets),
     })
     .returning()
@@ -84,7 +79,7 @@ export async function POST(req: Request) {
       type: 'merge',
       name: `Dataset: ${result.path}`,
       status: 'queued',
-      config: JSON.stringify({ sources, destDir: result.path }),
+      config: JSON.stringify({ sourceDirs, modelStream, destDir: result.path }),
       queuePosition: nextQueuePosition(),
     })
     .run();

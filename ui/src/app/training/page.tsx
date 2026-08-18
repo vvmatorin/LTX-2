@@ -91,10 +91,6 @@ function TrainingPageInner() {
   }
 
   const activeDataset = selectedDataset || datasets[0]?.name || '';
-  const activeDatasetObj = datasets.find(ds => ds.name === activeDataset);
-  const datasetMissingStream = Boolean(
-    activeDatasetObj && !activeDatasetObj.streams.includes(config.model.modelStream),
-  );
 
   const handleStreamChange = (stream: ModelStream) => {
     if (!settings) return;
@@ -116,7 +112,7 @@ function TrainingPageInner() {
         return;
       }
     }
-    const outputName = `Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
+    const outputName = `[${config.model.modelStream}] Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
     try {
       await createRun({
         name: outputName,
@@ -170,8 +166,7 @@ function TrainingPageInner() {
                     <SelectContent>
                       {datasets.map(ds => (
                         <SelectItem key={ds.name} value={ds.name}>
-                          {ds.name} ({ds.buckets.length} buckets{ds.streams.length ? `, ${ds.streams.join(' + ')}` : ''}
-                          )
+                          {ds.name} ({ds.buckets.length} buckets, {ds.modelStream})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -286,23 +281,13 @@ function TrainingPageInner() {
 
               {startError && <p className="text-destructive text-xs">{startError}</p>}
 
-              <Button
-                className="w-full"
-                onClick={handleStartTraining}
-                disabled={isCreating || !activeDataset || datasetMissingStream}
-              >
+              <Button className="w-full" onClick={handleStartTraining} disabled={isCreating || !activeDataset}>
                 <Play className="mr-1.5 h-4 w-4" />
                 {isCreating ? 'Starting...' : 'Start Training'}
               </Button>
 
               {!activeDataset && (
                 <p className="text-muted-foreground text-center text-[10px]">Select a dataset to enable training</p>
-              )}
-              {datasetMissingStream && (
-                <p className="text-destructive text-center text-[10px]">
-                  Dataset has no {MODEL_STREAM_LABELS[config.model.modelStream]} data — reprocess its buckets with that
-                  stream first.
-                </p>
               )}
             </CardContent>
           </Card>

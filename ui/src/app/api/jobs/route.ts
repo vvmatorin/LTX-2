@@ -52,9 +52,7 @@ export async function GET(req: Request) {
       if (r.type === 'preprocess' && r.status === 'completed') {
         const cfg = config as Record<string, unknown>;
         const outputFolderPath = cfg.outputFolderPath as string | undefined;
-        const stream = cfg.modelStream as string | undefined;
-        outputExists =
-          outputFolderPath && stream ? fs.existsSync(path.join(outputFolderPath, '.precomputed', stream)) : false;
+        outputExists = outputFolderPath ? fs.existsSync(path.join(outputFolderPath, '.precomputed')) : false;
       }
       return {
         ...r,
@@ -108,14 +106,14 @@ export async function POST(req: Request) {
 
       if (config.audioOnly) {
         // Audio-only preprocessing: flat output, no resolution/frame dimension.
-        config.outputFolderPath = path.join(folder.path, '_buckets', 'audio_only');
+        config.outputFolderPath = path.join(folder.path, '_buckets', stream, 'audio_only');
       } else {
         const resolution = config.resolution as number;
         const frameCounts = (config.frameCounts as number[]) || [];
 
         const frameCount = frameCounts[0];
         if (resolution && frameCount !== undefined) {
-          config.outputFolderPath = path.join(folder.path, '_buckets', `${resolution}_${frameCount}`);
+          config.outputFolderPath = path.join(folder.path, '_buckets', stream, `${resolution}_${frameCount}`);
         }
 
         if (resolution && frameCounts.length > 0) {

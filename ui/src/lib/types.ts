@@ -79,10 +79,9 @@ export interface TrainingDataset {
   id: number;
   name: string;
   path: string;
+  modelStream: ModelStream;
   buckets: DatasetBucket[];
   pathExists: boolean;
-  /** Streams whose precomputed root (.precomputed/<stream>) exists on disk. */
-  streams: ModelStream[];
   buildStatus: 'queued' | 'running' | null;
   createdAt: string;
 }

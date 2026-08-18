@@ -33,23 +33,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Failed to create output directory: ${toErrorMessage(err)}` }, { status: 500 });
   }
 
-  const stream = uiConfig.model.modelStream;
-  if (!stream) {
-    return NextResponse.json({ error: 'model.modelStream is required' }, { status: 400 });
-  }
-
   let preprocessedDataRoot: string | null = null;
   const dataset = db.select().from(trainingDatasets).where(eq(trainingDatasets.name, datasetName)).get();
   if (dataset) {
-    preprocessedDataRoot = path.join(dataset.path, '.precomputed', stream);
-    if (!fs.existsSync(preprocessedDataRoot)) {
-      return NextResponse.json(
-        {
-          error: `Dataset "${datasetName}" has no precomputed data for ${stream}. Reprocess its buckets with that model stream first.`,
-        },
-        { status: 400 },
-      );
-    }
+    preprocessedDataRoot = path.join(dataset.path, '.precomputed');
   }
   if (!preprocessedDataRoot && uiConfig.data?.preprocessedDataRoot) {
     preprocessedDataRoot = uiConfig.data.preprocessedDataRoot;
@@ -67,7 +54,7 @@ export async function POST(req: Request) {
     .insert(jobs)
     .values({
       type: 'training',
-      name: runName || `Train: ${outputDir}`,
+      name: runName || `[${uiConfig.model.modelStream}] Train: ${outputDir}`,
       status: 'queued',
       config: JSON.stringify({
         ...uiConfig,
