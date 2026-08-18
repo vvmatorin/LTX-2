@@ -29,7 +29,7 @@ from ltx_core.guidance.perturbations import (
 )
 from ltx_core.model.transformer.modality import Modality
 from ltx_core.model.transformer.model import X0Model
-from ltx_core.model.video_vae import SpatialTilingConfig, TemporalTilingConfig, TilingConfig
+from ltx_core.model.video_vae import DimensionSizeConfig, TileSizeConfig
 from ltx_core.tools import AudioLatentTools, VideoLatentTools
 from ltx_core.types import AudioLatentShape, LatentState, SpatioTemporalScaleFactors, VideoLatentShape, VideoPixelShape
 from ltx_trainer.progress import SamplingContext
@@ -38,10 +38,9 @@ if TYPE_CHECKING:
     from ltx_core.model.audio_vae import AudioDecoder, Vocoder
     from ltx_core.model.transformer import LTXModel
     from ltx_core.model.video_vae import VideoDecoder, VideoEncoder
-    from ltx_core.text_encoders.gemma import GemmaTextEncoder
+    from ltx_core.text_encoders.gemma import LTXGemmaTextEncoder
     from ltx_core.text_encoders.gemma.embeddings_processor import EmbeddingsProcessor
 
-VIDEO_SCALE_FACTORS = SpatioTemporalScaleFactors.default()
 DEFAULT_IMAGE_CRF = 33
 
 
@@ -128,11 +127,12 @@ class ValidationSampler:
         transformer: "LTXModel",
         vae_decoder: "VideoDecoder",
         vae_encoder: "VideoEncoder | None",
-        text_encoder: "GemmaTextEncoder | None" = None,
+        text_encoder: "LTXGemmaTextEncoder | None" = None,
         audio_decoder: "AudioDecoder | None" = None,
         vocoder: "Vocoder | None" = None,
         sampling_context: SamplingContext | None = None,
         embeddings_processor: "EmbeddingsProcessor | None" = None,
+        video_scale_factors: SpatioTemporalScaleFactors | None = None,
     ):
         """Initialize the validation sampler.
         Args:
@@ -146,6 +146,7 @@ class ValidationSampler:
             embeddings_processor: Optional embeddings processor (required if text_encoder provided)
         """
         self._transformer = transformer
+        self._video_scale_factors = video_scale_factors or SpatioTemporalScaleFactors.default()
         self._vae_decoder = vae_decoder
         self._vae_encoder = vae_encoder
         self._text_encoder = text_encoder
@@ -348,7 +349,7 @@ class ValidationSampler:
             patchifier=self._video_patchifier,
             target_shape=VideoLatentShape.from_pixel_shape(shape=pixel_shape),
             fps=config.frame_rate,
-            scale_factors=VIDEO_SCALE_FACTORS,
+            scale_factors=self._video_scale_factors,
             causal_fix=True,
         )
 
@@ -472,7 +473,7 @@ class ValidationSampler:
             width=latents.shape[4],
         )
         latent_coords = self._video_patchifier.get_patch_grid_bounds(output_shape=latent_shape, device=device)
-        positions = get_pixel_coords(latent_coords, scale_factors=VIDEO_SCALE_FACTORS, causal_fix=True)
+        positions = get_pixel_coords(latent_coords, scale_factors=self._video_scale_factors, causal_fix=True)
         positions = positions.to(torch.bfloat16)
         positions[:, 0, ...] = positions[:, 0, ...] / fps
 
@@ -602,8 +603,7 @@ class ValidationSampler:
 
         return video_state, audio_state
 
-    @staticmethod
-    def _build_stg_perturbation_config(config: GenerationConfig) -> BatchedPerturbationConfig:
+    def _build_stg_perturbation_config(self, config: GenerationConfig) -> BatchedPerturbationConfig:
         """Build the perturbation config for STG based on the stg_mode."""
         # Always skip video self-attention for STG
         perturbations: list[Perturbation] = [
@@ -616,14 +616,17 @@ class ValidationSampler:
 
         perturbation_config = PerturbationConfig(perturbations=perturbations)
         # Batch size is 1 for validation
-        return BatchedPerturbationConfig(perturbations=[perturbation_config])
+        return BatchedPerturbationConfig(
+            perturbations=[perturbation_config],
+            num_blocks=self._transformer.num_blocks,
+        )
 
     def _decode_video_latent(self, latent: Tensor, config: GenerationConfig, device: torch.device) -> Tensor:
         """Decode patchified video latent to pixel space."""
         # Unpatchify
-        latent_frames = config.num_frames // VIDEO_SCALE_FACTORS.time + 1
-        latent_height = config.height // VIDEO_SCALE_FACTORS.height
-        latent_width = config.width // VIDEO_SCALE_FACTORS.width
+        latent_frames = config.num_frames // self._video_scale_factors.time + 1
+        latent_height = config.height // self._video_scale_factors.height
+        latent_width = config.width // self._video_scale_factors.width
 
         unpatchified = self._video_patchifier.unpatchify(
             latent,
@@ -643,14 +646,18 @@ class ValidationSampler:
 
         if tiled_config is not None and tiled_config.enabled:
             # Use tiled decoding for reduced VRAM
-            tiling_config = TilingConfig(
-                spatial_config=SpatialTilingConfig(
-                    tile_size_in_pixels=tiled_config.tile_size_pixels,
-                    tile_overlap_in_pixels=tiled_config.tile_overlap_pixels,
+            tiling_config = TileSizeConfig(
+                frames=DimensionSizeConfig(
+                    tile_size=tiled_config.tile_size_frames,
+                    overlap=tiled_config.tile_overlap_frames,
                 ),
-                temporal_config=TemporalTilingConfig(
-                    tile_size_in_frames=tiled_config.tile_size_frames,
-                    tile_overlap_in_frames=tiled_config.tile_overlap_frames,
+                height=DimensionSizeConfig(
+                    tile_size=tiled_config.tile_size_pixels,
+                    overlap=tiled_config.tile_overlap_pixels,
+                ),
+                width=DimensionSizeConfig(
+                    tile_size=tiled_config.tile_size_pixels,
+                    overlap=tiled_config.tile_overlap_pixels,
                 ),
             )
             chunks = []
@@ -711,13 +718,13 @@ class ValidationSampler:
         self._text_encoder.to(device)
         self._embeddings_processor.to(device)
 
-        pos_hs, pos_mask = self._text_encoder.encode(config.prompt)
+        pos_hs, pos_mask = self._text_encoder.encode([config.prompt])[0]
         pos_out = self._embeddings_processor.process_hidden_states(pos_hs, pos_mask)
         v_ctx_pos, a_ctx_pos = pos_out.video_encoding, pos_out.audio_encoding
 
         v_ctx_neg, a_ctx_neg = None, None
         if config.guidance_scale != 1.0:
-            neg_hs, neg_mask = self._text_encoder.encode(config.negative_prompt)
+            neg_hs, neg_mask = self._text_encoder.encode([config.negative_prompt])[0]
             neg_out = self._embeddings_processor.process_hidden_states(neg_hs, neg_mask)
             v_ctx_neg, a_ctx_neg = neg_out.video_encoding, neg_out.audio_encoding
 
@@ -743,14 +750,18 @@ class ValidationSampler:
 
         if tiled_config is not None and tiled_config.enabled:
             # Use tiled decoding for reduced VRAM
-            tiling_config = TilingConfig(
-                spatial_config=SpatialTilingConfig(
-                    tile_size_in_pixels=tiled_config.tile_size_pixels,
-                    tile_overlap_in_pixels=tiled_config.tile_overlap_pixels,
+            tiling_config = TileSizeConfig(
+                frames=DimensionSizeConfig(
+                    tile_size=tiled_config.tile_size_frames,
+                    overlap=tiled_config.tile_overlap_frames,
                 ),
-                temporal_config=TemporalTilingConfig(
-                    tile_size_in_frames=tiled_config.tile_size_frames,
-                    tile_overlap_in_frames=tiled_config.tile_overlap_frames,
+                height=DimensionSizeConfig(
+                    tile_size=tiled_config.tile_size_pixels,
+                    overlap=tiled_config.tile_overlap_pixels,
+                ),
+                width=DimensionSizeConfig(
+                    tile_size=tiled_config.tile_size_pixels,
+                    overlap=tiled_config.tile_overlap_pixels,
                 ),
             )
             chunks = []

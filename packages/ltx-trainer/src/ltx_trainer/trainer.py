@@ -37,7 +37,13 @@ from ltx_trainer.datasets import PrecomputedDataset, collate_with_optional_sourc
 from ltx_trainer.gpu_utils import free_gpu_memory, free_gpu_memory_context, get_gpu_memory_gb
 from ltx_trainer.hf_hub_utils import push_to_hub
 from ltx_trainer.lora_utils import detect_checkpoint_lora_modules, freeze_extra_lora_layers, matches_any_lora_target
-from ltx_trainer.model_loader import load_embeddings_processor, load_text_encoder
+from ltx_trainer.model_loader import (
+    embedding_weight_paths,
+    load_embeddings_processor,
+    load_text_encoder,
+    read_video_scale_factors,
+    resolve_video_vae_path,
+)
 from ltx_trainer.model_loader import load_model as load_ltx_model
 from ltx_trainer.progress import TrainingProgress
 from ltx_trainer.quantization import quantize_model
@@ -86,6 +92,9 @@ class LtxvTrainer:
         if IS_MAIN_PROCESS:
             print_config(trainer_config)
         self._training_strategy = get_training_strategy(self._config.training_strategy)
+        self._training_strategy.video_scale_factors = read_video_scale_factors(
+            resolve_video_vae_path(self._config.model.model_path, self._config.model.video_vae_path)
+        )
         self._cached_validation_embeddings = self._load_text_encoder_and_cache_embeddings()
         self._load_models()
         self._setup_accelerator()
@@ -200,6 +209,14 @@ class LtxvTrainer:
                         self._global_step += 1
 
                     loss, last_sigmas = self._training_step(batch)
+
+                    # Detached zero leaf: backward contributes no gradient for this batch,
+                    # instead of a non-finite loss poisoning the optimizer moments.
+                    if not torch.isfinite(loss).all():
+                        logger.warning(
+                            f"Non-finite loss at global step {self._global_step}; skipping batch gradient."
+                        )
+                        loss = torch.zeros_like(loss).requires_grad_(True)
                     self._accelerator.backward(loss.mean())
 
                     grad_norm = None
@@ -489,7 +506,10 @@ class LtxvTrainer:
         # Load embeddings processor (feature extractor + connectors)
         logger.debug("Loading embeddings processor...")
         self._embeddings_processor = load_embeddings_processor(
-            checkpoint_path=self._config.model.model_path,
+            checkpoint_path=embedding_weight_paths(
+                self._config.model.model_path, self._config.model.text_encoder_path
+            ),
+            gemma_model_path=self._config.model.text_encoder_path,
             device="cuda",
             dtype=torch.bfloat16,
         )
@@ -501,10 +521,10 @@ class LtxvTrainer:
             cached_embeddings = []
             with torch.inference_mode():
                 for prompt in self._config.validation.prompts:
-                    pos_hs, pos_mask = text_encoder.encode(prompt)
+                    pos_hs, pos_mask = text_encoder.encode([prompt])[0]
                     pos_out = self._embeddings_processor.process_hidden_states(pos_hs, pos_mask)
 
-                    neg_hs, neg_mask = text_encoder.encode(self._config.validation.negative_prompt)
+                    neg_hs, neg_mask = text_encoder.encode([self._config.validation.negative_prompt])[0]
                     neg_out = self._embeddings_processor.process_hidden_states(neg_hs, neg_mask)
 
                     cached_embeddings.append(
@@ -523,7 +543,7 @@ class LtxvTrainer:
         caption_dropout_p = getattr(self._config.training_strategy, "caption_dropout_p", 0.0)
         if caption_dropout_p > 0.0:
             with torch.inference_mode():
-                empty_hs, empty_mask = text_encoder.encode("", padding_side="left")
+                empty_hs, empty_mask = text_encoder.encode([""])[0]
                 empty_video, empty_audio = self._embeddings_processor.feature_extractor(empty_hs, empty_mask, "left")
             self._empty_caption_features = {
                 "video": empty_video.detach().cpu().contiguous(),
@@ -554,6 +574,8 @@ class LtxvTrainer:
         # Load all model components (except text encoder - already handled)
         components = load_ltx_model(
             checkpoint_path=self._config.model.model_path,
+            video_vae_path=self._config.model.video_vae_path,
+            audio_vae_path=self._config.model.audio_vae_path,
             device="cpu",
             dtype=torch.bfloat16,
             with_video_vae_encoder=need_vae_encoder,  # Needed for image conditioning
@@ -1144,6 +1166,7 @@ class LtxvTrainer:
             audio_decoder=self._audio_vae if generate_audio else None,
             vocoder=self._vocoder if generate_audio else None,
             sampling_context=sampling_ctx,
+            video_scale_factors=self._training_strategy.video_scale_factors,
         )
 
         output_dir = Path(self._config.output_dir) / "samples"

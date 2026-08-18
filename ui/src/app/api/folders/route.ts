@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { sourceFolders, jobs } from '@/db/schema';
 import { eq, like } from 'drizzle-orm';
 import { safeId, parseJobConfig } from '@/lib/utils';
+import { MODEL_STREAMS } from '@/lib/types';
 import fs from 'fs';
 import path from 'path';
 
@@ -70,9 +71,11 @@ function syncBucketJobs(folderId: number, folderPath: string) {
 
   // Audio-only bucket (flat, no resolution/frame dimension).
   if (hasAudioOnlyBucket) {
-    const audioJobName = `Preprocess: ${folderPath}/_buckets/audio_only`;
-    if (!existingNames.has(audioJobName)) {
-      const audioBucketPath = path.join(bucketsDir, 'audio_only');
+    const audioBucketPath = path.join(bucketsDir, 'audio_only');
+    for (const stream of MODEL_STREAMS) {
+      if (!fs.existsSync(path.join(audioBucketPath, '.precomputed', stream))) continue;
+      const audioJobName = `Preprocess: ${folderPath}/_buckets/audio_only [${stream}]`;
+      if (existingNames.has(audioJobName)) continue;
       db.insert(jobs)
         .values({
           type: 'preprocess',
@@ -83,6 +86,7 @@ function syncBucketJobs(folderId: number, folderPath: string) {
             folderPath,
             outputFolderPath: audioBucketPath,
             datasetPath: path.join(folderPath, 'dataset.json'),
+            modelStream: stream,
             audioOnly: true,
             withAudio: true,
           }),
@@ -97,36 +101,40 @@ function syncBucketJobs(folderId: number, folderPath: string) {
     const match = BUCKET_DIR_PATTERN.exec(dir.name)!;
     const res = Number(match[1]);
     const fc = Number(match[2]);
-    const jobName = `Preprocess: ${folderPath}/_buckets/${res}_${fc}`;
-
-    if (existingNames.has(jobName)) continue;
-
     const bucketPath = path.join(bucketsDir, dir.name);
-    const precomputed = path.join(bucketPath, '.precomputed');
-    const hFlip = fs.existsSync(path.join(precomputed, 'latents_h_flip'));
-    const withAudio = fs.existsSync(path.join(precomputed, 'audio_latents'));
-    const frameSampling = fc >= 100 ? 'uniform' : 'head';
 
-    db.insert(jobs)
-      .values({
-        type: 'preprocess',
-        name: jobName,
-        status: 'completed',
-        config: JSON.stringify({
-          folderId,
-          resolution: res,
-          frameCounts: [fc],
-          folderPath,
-          outputFolderPath: bucketPath,
-          datasetPath: path.join(folderPath, 'dataset.json'),
-          hFlip,
-          withAudio,
-          frameSampling,
-        }),
-        queuePosition: 0,
-        completedAt: new Date().toISOString(),
-      })
-      .run();
+    for (const stream of MODEL_STREAMS) {
+      const precomputed = path.join(bucketPath, '.precomputed', stream);
+      if (!fs.existsSync(precomputed)) continue;
+      const jobName = `Preprocess: ${folderPath}/_buckets/${res}_${fc} [${stream}]`;
+      if (existingNames.has(jobName)) continue;
+
+      const hFlip = fs.existsSync(path.join(precomputed, 'latents_h_flip'));
+      const withAudio = fs.existsSync(path.join(precomputed, 'audio_latents'));
+      const frameSampling = fc >= 100 ? 'uniform' : 'head';
+
+      db.insert(jobs)
+        .values({
+          type: 'preprocess',
+          name: jobName,
+          status: 'completed',
+          config: JSON.stringify({
+            folderId,
+            resolution: res,
+            frameCounts: [fc],
+            folderPath,
+            outputFolderPath: bucketPath,
+            datasetPath: path.join(folderPath, 'dataset.json'),
+            modelStream: stream,
+            hFlip,
+            withAudio,
+            frameSampling,
+          }),
+          queuePosition: 0,
+          completedAt: new Date().toISOString(),
+        })
+        .run();
+    }
   }
 }
 

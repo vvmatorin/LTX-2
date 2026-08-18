@@ -26,12 +26,63 @@ export interface ProcessingJob {
   outputExists?: boolean;
 }
 
+export type ModelStream = 'ltx-2.3' | 'ltx-2.5';
+
+export const MODEL_STREAMS: ModelStream[] = ['ltx-2.3', 'ltx-2.5'];
+
+export const MODEL_STREAM_LABELS: Record<ModelStream, string> = {
+  'ltx-2.3': 'LTX-2.3',
+  'ltx-2.5': 'LTX-2.5',
+};
+
+export interface StreamModelPaths {
+  modelPath: string;
+  textEncoderPath: string;
+  videoVaePath: string;
+  audioVaePath: string;
+}
+
+export type StreamPathSettings = Pick<
+  AppSettings,
+  | 'ltx23ModelPath'
+  | 'ltx23TextEncoderPath'
+  | 'ltx25ModelPath'
+  | 'ltx25TextEncoderPath'
+  | 'ltx25VideoVaePath'
+  | 'ltx25AudioVaePath'
+>;
+
+export function streamPaths(settings: StreamPathSettings, stream: ModelStream): StreamModelPaths {
+  if (stream === 'ltx-2.5') {
+    return {
+      modelPath: settings.ltx25ModelPath || '',
+      textEncoderPath: settings.ltx25TextEncoderPath || '',
+      videoVaePath: settings.ltx25VideoVaePath || '',
+      audioVaePath: settings.ltx25AudioVaePath || '',
+    };
+  }
+  return {
+    modelPath: settings.ltx23ModelPath || '',
+    textEncoderPath: settings.ltx23TextEncoderPath || '',
+    videoVaePath: '',
+    audioVaePath: '',
+  };
+}
+
+export function pickDefaultStream(settings: AppSettings): ModelStream {
+  if (settings.ltx25ModelPath) return 'ltx-2.5';
+  if (settings.ltx23ModelPath) return 'ltx-2.3';
+  return 'ltx-2.5';
+}
+
 export interface TrainingDataset {
   id: number;
   name: string;
   path: string;
   buckets: DatasetBucket[];
   pathExists: boolean;
+  /** Streams whose precomputed root (.precomputed/<stream>) exists on disk. */
+  streams: ModelStream[];
   buildStatus: 'queued' | 'running' | null;
   createdAt: string;
 }
@@ -40,6 +91,7 @@ export interface DatasetBucket {
   folderName: string;
   folderPath: string;
   jobId: number;
+  stream: ModelStream;
   resolution: number;
   frameCount: number;
   bucketKeys: string[];
@@ -50,8 +102,11 @@ export interface DatasetBucket {
 
 export interface TrainingConfig {
   model: {
+    modelStream: ModelStream;
     modelPath: string;
     textEncoderPath: string;
+    videoVaePath: string;
+    audioVaePath: string;
     trainingMode: 'lora' | 'full';
     loadCheckpoint: string | null;
   };
@@ -130,8 +185,12 @@ export interface TrainingConfig {
 }
 
 export interface AppSettings {
-  modelPath: string;
-  textEncoderPath: string;
+  ltx23ModelPath: string;
+  ltx23TextEncoderPath: string;
+  ltx25ModelPath: string;
+  ltx25TextEncoderPath: string;
+  ltx25VideoVaePath: string;
+  ltx25AudioVaePath: string;
   outputDir: string;
   datasetDir: string;
   scriptsDir: string;

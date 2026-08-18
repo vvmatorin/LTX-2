@@ -83,11 +83,13 @@ export async function startJob(job: JobRow): Promise<number> {
   const pidFile = logFile.replace(/\.log$/, '.pid');
   fs.writeFileSync(pidFile, String(child.pid));
 
+  const stream = (config.modelStream as string) || '';
+  const isPreprocess = job.type === 'preprocess' && Boolean(stream);
   const precomputedSrc =
-    job.type === 'preprocess' && config.folderPath ? path.join(config.folderPath as string, '.precomputed') : null;
+    isPreprocess && config.folderPath ? path.join(config.folderPath as string, '.precomputed', stream) : null;
   const precomputedDest =
-    job.type === 'preprocess' && config.outputFolderPath
-      ? path.join(config.outputFolderPath as string, '.precomputed')
+    isPreprocess && config.outputFolderPath
+      ? path.join(config.outputFolderPath as string, '.precomputed', stream)
       : null;
 
   const jobId = job.id;
@@ -103,9 +105,25 @@ export async function startJob(job: JobRow): Promise<number> {
       try {
         if (fs.existsSync(precomputedSrc)) {
           fs.mkdirSync(path.dirname(precomputedDest), { recursive: true });
+          fs.rmSync(precomputedDest, { recursive: true, force: true });
           fs.renameSync(precomputedSrc, precomputedDest);
+          fs.writeFileSync(
+            path.join(precomputedDest, 'provenance.json'),
+            JSON.stringify(
+              {
+                modelStream: stream,
+                modelPath: config.modelPath ?? null,
+                textEncoderPath: config.textEncoderPath ?? null,
+                videoVaePath: config.videoVaePath ?? null,
+                audioVaePath: config.audioVaePath ?? null,
+                completedAt: nowIso(),
+              },
+              null,
+              2,
+            ),
+          );
           try {
-            fs.writeSync(logFd, `[${nowIso()}] Moved .precomputed → ${precomputedDest}\n`);
+            fs.writeSync(logFd, `[${nowIso()}] Moved precomputed data → ${precomputedDest}\n`);
           } catch {
             /* log fd may already be closed on retry */
           }
@@ -144,11 +162,7 @@ function buildPreprocessArgs(config: Record<string, unknown>, scriptsDir: string
     args.push('--resolution-buckets', config.resolutionBuckets as string);
   }
 
-  const modelPath = (config.modelPath as string) || getSettingSync('modelPath');
-  if (modelPath) args.push('--model-path', modelPath);
-
-  const textEncoderPath = (config.textEncoderPath as string) || getSettingSync('textEncoderPath');
-  if (textEncoderPath) args.push('--text-encoder-path', textEncoderPath);
+  pushModelArgs(args, config);
 
   if (config.hFlip) args.push('--with-h-flip');
   if (config.withAudio) args.push('--with-audio');
@@ -174,38 +188,52 @@ function buildAudioPreprocessArgs(config: Record<string, unknown>, scriptsDir: s
   const datasetPath = (config.datasetPath as string) || '';
   args.push(datasetPath);
 
-  const modelPath = (config.modelPath as string) || getSettingSync('modelPath');
-  if (modelPath) args.push('--model-path', modelPath);
-
-  const textEncoderPath = (config.textEncoderPath as string) || getSettingSync('textEncoderPath');
-  if (textEncoderPath) args.push('--text-encoder-path', textEncoderPath);
+  pushModelArgs(args, config, { videoVae: false });
 
   if (config.maxDuration) args.push('--max-duration', String(config.maxDuration));
 
   return args;
 }
 
+function pushModelArgs(args: string[], config: Record<string, unknown>, opts: { videoVae?: boolean } = {}) {
+  const modelPath = (config.modelPath as string) || '';
+  const textEncoderPath = (config.textEncoderPath as string) || '';
+  if (modelPath) args.push('--model-path', modelPath);
+  if (textEncoderPath) args.push('--text-encoder-path', textEncoderPath);
+
+  const videoVaePath = (config.videoVaePath as string) || '';
+  const audioVaePath = (config.audioVaePath as string) || '';
+  if (opts.videoVae !== false && videoVaePath) args.push('--video-vae-path', videoVaePath);
+  if (audioVaePath) args.push('--audio-vae-path', audioVaePath);
+
+  const stream = (config.modelStream as string) || '';
+  const folderPath = (config.folderPath as string) || '';
+  if (stream && folderPath) {
+    args.push('--output-dir', path.join(folderPath, '.precomputed', stream));
+  }
+}
+
 function handleMergeJob(jobId: number, config: Record<string, unknown>, logFd: number): number {
   const db = getWorkerDb();
-  const sourceDirs = (config.sourceDirs as string[]) || [];
+  const sources = (config.sources as Array<{ dir: string; stream: string }>) || [];
   const destDir = (config.destDir as string) || '';
 
-  fs.writeSync(logFd, `[${nowIso()}] Merging ${sourceDirs.length} bucket(s) into ${destDir}\n`);
+  fs.writeSync(logFd, `[${nowIso()}] Merging ${sources.length} bucket(s) into ${destDir}\n`);
 
   try {
-    for (const src of sourceDirs) {
-      const pre = path.join(src, '.precomputed');
-      const tag = bucketTag(src);
-      fs.writeSync(logFd, `  Source ${src} -> ${tag}\n`);
+    for (const { dir, stream } of sources) {
+      const pre = path.join(dir, '.precomputed', stream);
+      const tag = bucketTag(dir);
+      fs.writeSync(logFd, `  Source ${dir} [${stream}] -> ${tag}\n`);
 
       for (const subdir of ['latents', 'latents_h_flip', 'conditions', 'audio_latents', 'reference_latents']) {
         const srcDir = path.join(pre, subdir);
         if (!fs.existsSync(srcDir)) continue;
 
-        const dest = path.join(destDir, '.precomputed', subdir, tag);
+        const dest = path.join(destDir, '.precomputed', stream, subdir, tag);
         fs.mkdirSync(dest, { recursive: true });
         hardLinkRecursive(srcDir, dest);
-        fs.writeSync(logFd, `  Linked ${subdir}/${tag}\n`);
+        fs.writeSync(logFd, `  Linked ${stream}/${subdir}/${tag}\n`);
       }
     }
 

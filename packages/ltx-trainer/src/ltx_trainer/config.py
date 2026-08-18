@@ -18,12 +18,26 @@ class ModelConfig(ConfigBaseModel):
 
     model_path: str | Path = Field(
         ...,
-        description="Model path - local path to safetensors checkpoint file",
+        description="Path to a unified LTX checkpoint or the transformer safetensors in a split LTX-2.5 pack.",
     )
 
     text_encoder_path: str | Path | None = Field(
         default=None,
-        description="Path to text encoder (required for LTX-2/Gemma models, optional for LTXV/T5 models)",
+        description="Path to the matching Gemma directory, or the packed text-encoder safetensors of a split pack.",
+    )
+
+    video_vae_path: str | Path | None = Field(
+        default=None,
+        description=(
+            "Video VAE safetensors. Required for a split pack; defaults to model_path for a unified checkpoint."
+        ),
+    )
+
+    audio_vae_path: str | Path | None = Field(
+        default=None,
+        description=(
+            "Audio VAE/vocoder safetensors. Required for a split pack; defaults to model_path for a unified checkpoint."
+        ),
     )
 
     training_mode: Literal["lora", "full"] = Field(
@@ -49,6 +63,14 @@ class ModelConfig(ConfigBaseModel):
         if not Path(v).exists():
             raise ValueError(f"Model path does not exist: {v}")
 
+        return v
+
+    @field_validator("video_vae_path", "audio_vae_path")
+    @classmethod
+    def validate_component_path(cls, v: str | Path | None) -> str | Path | None:
+        """Validate optional split-pack component paths."""
+        if v is not None and not Path(v).is_file():
+            raise ValueError(f"Model component path does not exist or is not a file: {v}")
         return v
 
 

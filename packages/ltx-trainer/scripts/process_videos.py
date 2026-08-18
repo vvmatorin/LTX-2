@@ -43,7 +43,12 @@ from transformers.utils.logging import disable_progress_bar
 from ltx_core.model.audio_vae import AudioProcessor
 from ltx_core.types import Audio
 from ltx_trainer import logger
-from ltx_trainer.model_loader import load_audio_vae_encoder, load_video_vae_encoder
+from ltx_trainer.model_loader import (
+    load_audio_vae_encoder,
+    load_video_vae_encoder,
+    resolve_audio_vae_path,
+    resolve_video_vae_path,
+)
 from ltx_trainer.utils import open_image_as_srgb
 from ltx_trainer.video_utils import get_video_frame_count, read_video
 
@@ -468,6 +473,8 @@ def compute_latents(  # noqa: PLR0913, PLR0915
     resolution_buckets: list[tuple[int, int, int]],
     output_dir: str,
     model_path: str,
+    video_vae_path: str | None = None,
+    audio_vae_path: str | None = None,
     main_media_column: str | None = None,
     reshape_mode: str = "center",
     batch_size: int = 1,
@@ -486,7 +493,9 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         video_column: Column name for video paths in the metadata file
         resolution_buckets: List of (frames, height, width) tuples
         output_dir: Directory to save video latents
-        model_path: Path to LTX-2 checkpoint (.safetensors)
+        model_path: Path to a unified LTX checkpoint or split-pack transformer (.safetensors)
+        video_vae_path: Video VAE safetensors (required for a split pack)
+        audio_vae_path: Audio VAE safetensors (required for a split pack when with_audio=True)
         reshape_mode: How to crop videos ("center", "random")
         main_media_column: Column name for main media paths (if different from video_column)
         batch_size: Batch size for processing
@@ -535,17 +544,18 @@ def compute_latents(  # noqa: PLR0913, PLR0915
         h_flip_output_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"H-flip augmentation enabled. Flipped latents will be saved to {h_flip_output_path}")
 
-    # Load video VAE encoder
-    with console.status(f"[bold]Loading video VAE encoder from [cyan]{model_path}[/]...", spinner="dots"):
-        vae = load_video_vae_encoder(model_path, device=torch_device, dtype=torch.bfloat16)
+    video_vae_file = resolve_video_vae_path(model_path, video_vae_path)
+    with console.status(f"[bold]Loading video VAE encoder from [cyan]{video_vae_file}[/]...", spinner="dots"):
+        vae = load_video_vae_encoder(video_vae_file, device=torch_device, dtype=torch.bfloat16)
 
     # Load audio VAE encoder and audio processor if needed
     audio_vae_encoder = None
     audio_processor = None
     if with_audio:
-        with console.status(f"[bold]Loading audio VAE encoder from [cyan]{model_path}[/]...", spinner="dots"):
+        audio_vae_file = resolve_audio_vae_path(model_path, audio_vae_path)
+        with console.status(f"[bold]Loading audio VAE encoder from [cyan]{audio_vae_file}[/]...", spinner="dots"):
             audio_vae_encoder = load_audio_vae_encoder(
-                checkpoint_path=model_path,
+                checkpoint_path=audio_vae_file,
                 device=torch_device,
                 dtype=torch.float32,  # Audio VAE needs float32 for quality. TODO: re-test with bfloat16.
             )
@@ -1027,7 +1037,15 @@ def main(  # noqa: PLR0913
     ),
     model_path: str = typer.Option(
         ...,
-        help="Path to LTX-2 checkpoint (.safetensors file)",
+        help="Path to a unified LTX checkpoint or split-pack transformer (.safetensors file)",
+    ),
+    video_vae_path: str | None = typer.Option(
+        default=None,
+        help="Video VAE safetensors (required for a split LTX-2.5 pack)",
+    ),
+    audio_vae_path: str | None = typer.Option(
+        default=None,
+        help="Audio VAE safetensors (required for a split LTX-2.5 pack when --with-audio is set)",
     ),
     video_column: str = typer.Option(
         default="media_path",
@@ -1111,6 +1129,8 @@ def main(  # noqa: PLR0913
         resolution_buckets=parsed_resolution_buckets,
         output_dir=output_dir,
         model_path=model_path,
+        video_vae_path=video_vae_path,
+        audio_vae_path=audio_vae_path,
         reshape_mode=reshape_mode,
         batch_size=batch_size,
         device=device,

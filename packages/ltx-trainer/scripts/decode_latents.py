@@ -28,9 +28,15 @@ from rich.progress import (
 )
 from transformers.utils.logging import disable_progress_bar
 
-from ltx_core.model.video_vae import SpatialTilingConfig, TemporalTilingConfig, TilingConfig
+from ltx_core.model.video_vae import DimensionSizeConfig, TileSizeConfig
 from ltx_trainer import logger
-from ltx_trainer.model_loader import load_audio_vae_decoder, load_video_vae_decoder, load_vocoder
+from ltx_trainer.model_loader import (
+    load_audio_vae_decoder,
+    load_video_vae_decoder,
+    load_vocoder,
+    resolve_audio_vae_path,
+    resolve_video_vae_path,
+)
 from ltx_trainer.video_utils import save_video
 
 DEFAULT_TILE_SIZE_PIXELS = 512  # Spatial tile size in pixels (must be ≥64 and divisible by 32)
@@ -54,10 +60,12 @@ class LatentsDecoder:
         device: str = "cuda",
         vae_tiling: bool = False,
         with_audio: bool = False,
+        video_vae_path: str | None = None,
+        audio_vae_path: str | None = None,
     ):
         """Initialize the decoder with model configuration.
         Args:
-            model_path: Path to LTX-2 checkpoint (.safetensors)
+            model_path: Path to a unified LTX checkpoint or split-pack transformer (.safetensors)
             device: Device to use for computation
             vae_tiling: Whether to enable VAE tiling for larger video resolutions
             with_audio: Whether to load audio VAE for audio decoding
@@ -69,19 +77,27 @@ class LatentsDecoder:
         self.vocoder = None
         self.vae_tiling = vae_tiling
 
-        self._load_model(model_path, with_audio)
+        self._load_model(model_path, with_audio, video_vae_path, audio_vae_path)
 
-    def _load_model(self, model_path: str, with_audio: bool = False) -> None:
+    def _load_model(
+        self,
+        model_path: str,
+        with_audio: bool = False,
+        video_vae_path: str | None = None,
+        audio_vae_path: str | None = None,
+    ) -> None:
         """Initialize and load the VAE model(s)."""
-        with console.status(f"[bold]Loading video VAE decoder from {model_path}...", spinner="dots"):
-            self.vae = load_video_vae_decoder(model_path, device=self.device, dtype=torch.bfloat16)
+        video_vae_file = resolve_video_vae_path(model_path, video_vae_path)
+        with console.status(f"[bold]Loading video VAE decoder from {video_vae_file}...", spinner="dots"):
+            self.vae = load_video_vae_decoder(video_vae_file, device=self.device, dtype=torch.bfloat16)
 
         if with_audio:
-            with console.status(f"[bold]Loading audio VAE decoder from {model_path}...", spinner="dots"):
-                self.audio_vae = load_audio_vae_decoder(model_path, device=self.device, dtype=torch.bfloat16)
+            audio_vae_file = resolve_audio_vae_path(model_path, audio_vae_path)
+            with console.status(f"[bold]Loading audio VAE decoder from {audio_vae_file}...", spinner="dots"):
+                self.audio_vae = load_audio_vae_decoder(audio_vae_file, device=self.device, dtype=torch.bfloat16)
 
-            with console.status(f"[bold]Loading vocoder from {model_path}...", spinner="dots"):
-                self.vocoder = load_vocoder(model_path, device=self.device)
+            with console.status(f"[bold]Loading vocoder from {audio_vae_file}...", spinner="dots"):
+                self.vocoder = load_vocoder(audio_vae_file, device=self.device)
 
     @torch.inference_mode()
     def decode(self, latents_dir: Path, output_dir: Path, seed: int | None = None) -> None:
@@ -228,14 +244,18 @@ class LatentsDecoder:
         """Decode latents to video frames."""
         if self.vae_tiling:
             # Use tiled decoding for reduced VRAM
-            tiling_config = TilingConfig(
-                spatial_config=SpatialTilingConfig(
-                    tile_size_in_pixels=DEFAULT_TILE_SIZE_PIXELS,
-                    tile_overlap_in_pixels=DEFAULT_TILE_OVERLAP_PIXELS,
+            tiling_config = TileSizeConfig(
+                frames=DimensionSizeConfig(
+                    tile_size=DEFAULT_TILE_SIZE_FRAMES,
+                    overlap=DEFAULT_TILE_OVERLAP_FRAMES,
                 ),
-                temporal_config=TemporalTilingConfig(
-                    tile_size_in_frames=DEFAULT_TILE_SIZE_FRAMES,
-                    tile_overlap_in_frames=DEFAULT_TILE_OVERLAP_FRAMES,
+                height=DimensionSizeConfig(
+                    tile_size=DEFAULT_TILE_SIZE_PIXELS,
+                    overlap=DEFAULT_TILE_OVERLAP_PIXELS,
+                ),
+                width=DimensionSizeConfig(
+                    tile_size=DEFAULT_TILE_SIZE_PIXELS,
+                    overlap=DEFAULT_TILE_OVERLAP_PIXELS,
                 ),
             )
             chunks = list(

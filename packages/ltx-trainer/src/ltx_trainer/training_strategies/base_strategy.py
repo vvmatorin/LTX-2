@@ -24,7 +24,6 @@ from ltx_trainer.timestep_samplers import TimestepSampler
 DEFAULT_FPS = 24
 
 # VAE scale factors for LTX-2
-VIDEO_SCALE_FACTORS = SpatioTemporalScaleFactors.default()
 
 
 class TrainingStrategyConfigBase(BaseModel):
@@ -89,6 +88,7 @@ class TrainingStrategy(ABC):
         self.config = config
         self._video_patchifier = VideoLatentPatchifier(patch_size=1)
         self._audio_patchifier = AudioPatchifier(patch_size=1)
+        self.video_scale_factors = SpatioTemporalScaleFactors.default()
 
     @property
     def requires_audio(self) -> bool:
@@ -195,7 +195,7 @@ class TrainingStrategy(ABC):
         # Convert latent coords to pixel coords with causal fix
         pixel_coords = get_pixel_coords(
             latent_coords=latent_coords,
-            scale_factors=VIDEO_SCALE_FACTORS,
+            scale_factors=self.video_scale_factors,
             causal_fix=True,
         ).to(dtype)
 

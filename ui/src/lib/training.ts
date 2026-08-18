@@ -1,10 +1,13 @@
-import type { TrainingConfig } from './types';
+import type { ModelStream, StreamModelPaths, TrainingConfig } from './types';
 
-export function buildDefaultConfig(modelPath: string, textEncoderPath: string, outputDir: string): TrainingConfig {
+export function buildDefaultConfig(stream: ModelStream, paths: StreamModelPaths, outputDir: string): TrainingConfig {
   return {
     model: {
-      modelPath,
-      textEncoderPath,
+      modelStream: stream,
+      modelPath: paths.modelPath,
+      textEncoderPath: paths.textEncoderPath,
+      videoVaePath: paths.videoVaePath,
+      audioVaePath: paths.audioVaePath,
       trainingMode: 'lora',
       loadCheckpoint: null,
     },

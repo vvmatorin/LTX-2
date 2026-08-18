@@ -30,6 +30,7 @@ def apply_rotary_emb(
 def apply_interleaved_rotary_emb(
     input_tensor: torch.Tensor, cos_freqs: torch.Tensor, sin_freqs: torch.Tensor
 ) -> torch.Tensor:
+    orig_dtype = input_tensor.dtype
     t_dup = rearrange(input_tensor, "... (d r) -> ... d r", r=2)
     t1, t2 = t_dup.unbind(dim=-1)
     t_dup = torch.stack((-t2, t1), dim=-1)
@@ -37,7 +38,7 @@ def apply_interleaved_rotary_emb(
 
     out = input_tensor * cos_freqs + input_tensor_rot * sin_freqs
 
-    return out
+    return out.to(orig_dtype)
 
 
 def apply_split_rotary_emb(
@@ -48,6 +49,8 @@ def apply_split_rotary_emb(
             f"apply_split_rotary_emb: sin_freqs.shape {tuple(sin_freqs.shape)} must equal "
             f"cos_freqs.shape {tuple(cos_freqs.shape)}."
         )
+    # `split_input * cos_freqs` allocates a fresh (possibly promoted) tensor, so the in-place addcmul_ below stays safe.
+    orig_dtype = input_tensor.dtype
     needs_reshape = input_tensor.ndim != 4 and cos_freqs.ndim == 4
     if needs_reshape:
         b_freq = cos_freqs.shape[0]
@@ -81,7 +84,7 @@ def apply_split_rotary_emb(
         # `reshape(b_in, t, -1)` would force Dynamo to specialise both axes.
         output = output.transpose(1, 2).flatten(-2)
 
-    return output
+    return output.to(orig_dtype)
 
 
 @functools.lru_cache(maxsize=5)

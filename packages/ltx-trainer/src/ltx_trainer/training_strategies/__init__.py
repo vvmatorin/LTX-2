@@ -8,7 +8,6 @@ Each strategy encapsulates the specific logic for preparing model inputs and com
 from ltx_trainer import logger
 from ltx_trainer.training_strategies.base_strategy import (
     DEFAULT_FPS,
-    VIDEO_SCALE_FACTORS,
     ModelInputs,
     TrainingStrategy,
     TrainingStrategyConfigBase,
@@ -21,7 +20,6 @@ TrainingStrategyConfig = TextToVideoConfig | VideoToVideoConfig
 
 __all__ = [
     "DEFAULT_FPS",
-    "VIDEO_SCALE_FACTORS",
     "ModelInputs",
     "TextToVideoConfig",
     "TextToVideoStrategy",

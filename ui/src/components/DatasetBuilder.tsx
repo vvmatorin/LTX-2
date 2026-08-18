@@ -60,6 +60,7 @@ export function DatasetBuilder({
         const cfg = j.config as {
           folderId?: number;
           outputFolderPath?: string;
+          modelStream?: string;
           resolution?: number;
           frameCounts?: number[];
           withAudio?: boolean;
@@ -73,6 +74,7 @@ export function DatasetBuilder({
           folderName: folderPath.split('/').filter(Boolean).pop() || 'unknown',
           folderPath,
           jobId: j.id,
+          stream: (cfg.modelStream || 'ltx-2.3') as DatasetBucket['stream'],
           resolution: cfg.resolution || 0,
           frameCount: (cfg.frameCounts || [0])[0],
           bucketKeys,
