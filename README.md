@@ -105,7 +105,7 @@ the transformer, VAEs and text projection, with the Gemma 3 text encoder downloa
 Files are not interchangeable between the two models, and a LoRA only works with the model it was
 trained on.
 
-See **[LTX-2.3 models](MODELS-LTX-2.3.md)** for the full list.
+See **[LTX-2.3 models](https://github.com/Lightricks/LTX-2/blob/400fd31054597515f47125691032c04b1c3ee24e/MODELS-LTX-2.3.md)** for the full list.
 
 ### Available Pipelines
 
