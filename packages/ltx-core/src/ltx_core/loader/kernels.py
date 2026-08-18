@@ -9,6 +9,7 @@ except (ImportError, OSError):
 
 
 if TRITON_AVAILABLE:
+
     @triton.jit
     def fused_add_round_kernel(
         x_ptr,
@@ -65,8 +66,7 @@ if TRITON_AVAILABLE:
         # Subnormal ULP: 2^(1 - EXPONENT_BIAS - MANTISSA_BITS) ->
         # fp16 exponent bits: (1 - EXPONENT_BIAS - MANTISSA_BITS) + 15 =
         # 16 - EXPONENT_BIAS - MANTISSA_BITS
-        eps_subnormal = tl.cast((16 - EXPONENT_BIAS - MANTISSA_BITS) << 10, tl.int16)
-        eps_subnormal = tl.cast(eps_subnormal, tl.float16, bitcast=True)
+        eps_subnormal = tl.cast(tl.cast((16 - EXPONENT_BIAS - MANTISSA_BITS) << 10, tl.int16), tl.float16, bitcast=True)
         eps = tl.where(exponent > 0, eps_normal, eps_subnormal)
 
         # Apply zero mask to epsilon

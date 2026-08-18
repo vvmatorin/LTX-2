@@ -20,6 +20,7 @@ class _BasicTransformerBlock1D(torch.nn.Module):
         dim_head: int,
         rope_type: LTXRopeType = LTXRopeType.SPLIT,
         apply_gated_attention: bool = False,
+        ff_bias: bool = True,
     ):
         super().__init__()
 
@@ -34,12 +35,13 @@ class _BasicTransformerBlock1D(torch.nn.Module):
         self.ff = FeedForward(
             dim,
             dim_out=dim,
+            bias=ff_bias,
         )
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
+        additive_attention_mask: torch.Tensor | None = None,
         pe: torch.Tensor | None = None,
     ) -> torch.Tensor:
         # Notice that normalization is always applied before the real computation in the following blocks.
@@ -49,8 +51,8 @@ class _BasicTransformerBlock1D(torch.nn.Module):
 
         norm_hidden_states = norm_hidden_states.squeeze(1)
 
-        # 2. Self-Attention
-        attn_output = self.attn1(norm_hidden_states, mask=attention_mask, pe=pe)
+        # 2. Self-Attention — `mask` is the kernel-boundary name for the additive mask.
+        attn_output = self.attn1(norm_hidden_states, mask=additive_attention_mask, pe=pe)
 
         hidden_states = attn_output + hidden_states
         if hidden_states.ndim == 4:
@@ -84,13 +86,13 @@ class Embeddings1DConnector(torch.nn.Module):
         causal_temporal_positioning (bool): If True, uses causal attention (default=False).
         num_learnable_registers (int | None): Number of learnable registers to replace padded tokens. If None, disables
             register replacement. (default=128)
-        rope_type (LTXRopeType): The RoPE variant to use (default=DEFAULT_ROPE_TYPE).
+        rope_type (LTXRopeType): The RoPE variant to use.
         double_precision_rope (bool): Use double precision rope calculation (default=False).
     """
 
     _supports_gradient_checkpointing = True
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         attention_head_dim: int = 128,
         num_attention_heads: int = 30,
@@ -102,6 +104,7 @@ class Embeddings1DConnector(torch.nn.Module):
         rope_type: LTXRopeType = LTXRopeType.SPLIT,
         double_precision_rope: bool = False,
         apply_gated_attention: bool = False,
+        ff_bias: bool = True,
     ):
         super().__init__()
         self.num_attention_heads = num_attention_heads
@@ -121,6 +124,7 @@ class Embeddings1DConnector(torch.nn.Module):
                     dim_head=attention_head_dim,
                     rope_type=rope_type,
                     apply_gated_attention=apply_gated_attention,
+                    ff_bias=ff_bias,
                 )
                 for _ in range(num_layers)
             ]
@@ -133,55 +137,36 @@ class Embeddings1DConnector(torch.nn.Module):
             )
 
     def _replace_padded_with_learnable_registers(
-        self, hidden_states: torch.Tensor, attention_mask: torch.Tensor
+        self, hidden_states: torch.Tensor, additive_attention_mask: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        assert hidden_states.shape[1] % self.num_learnable_registers == 0, (
-            f"Hidden states sequence length {hidden_states.shape[1]} must be divisible by num_learnable_registers "
-            f"{self.num_learnable_registers}."
-        )
+        batch_size, seq_len, _ = hidden_states.shape
 
-        num_registers_duplications = hidden_states.shape[1] // self.num_learnable_registers
-        learnable_registers = torch.tile(self.learnable_registers, (num_registers_duplications, 1))
-        attention_mask_binary = (attention_mask.squeeze(1).squeeze(1).unsqueeze(-1) >= -9000.0).int()
+        assert seq_len % self.num_learnable_registers == 0
 
-        # Move each sample's valid tokens to the front, keeping their relative order (stable sort).
-        # Done per row so that samples with different valid-token counts can share a batch.
-        order = torch.argsort(1 - attention_mask_binary.squeeze(-1), dim=1, stable=True)
-        adjusted_hidden_states = torch.gather(
-            hidden_states, dim=1, index=order.unsqueeze(-1).expand(-1, -1, hidden_states.shape[-1])
-        )
+        registers = self.learnable_registers.repeat(seq_len // self.num_learnable_registers, 1).to(hidden_states.dtype)
+        registers = registers.unsqueeze(0).expand(batch_size, -1, -1)  # (B, seq_len, hidden_dim)
+        binary_mask = additive_attention_mask[:, 0, 0, :].unsqueeze(-1) >= 0
+        binary_mask = binary_mask.to(hidden_states.dtype)
+        hidden_states = binary_mask * hidden_states + (1 - binary_mask) * registers
 
-        # Keep the front-aligned valid tokens, fill the remaining positions with registers.
-        valid_counts = attention_mask_binary.sum(dim=1, keepdim=True)
-        positions = torch.arange(hidden_states.shape[1], device=hidden_states.device).view(1, -1, 1)
-        front_mask = (positions < valid_counts).to(attention_mask_binary.dtype)
-        hidden_states = front_mask * adjusted_hidden_states + (1 - front_mask) * learnable_registers
-
-        attention_mask = torch.full_like(
-            attention_mask,
-            0.0,
-            dtype=attention_mask.dtype,
-            device=attention_mask.device,
-        )
-
-        return hidden_states, attention_mask
+        return hidden_states, torch.zeros_like(additive_attention_mask)
 
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor | None = None,
+        additive_attention_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass of Embeddings1DConnector.
+        """Forward pass of Embeddings1DConnector.
         Args:
-            hidden_states (torch.Tensor): Input tensor of embeddings (shape [batch, seq_len, feature_dim]).
-            attention_mask (torch.Tensor|None): Optional mask for valid tokens (shape compatible with hidden_states).
+            hidden_states: (B, S, D) input embeddings.
+            additive_attention_mask: optional additive mask of shape (B, 1, 1, S), where
+                valid = 0.0 and padding = -torch.finfo(dtype).max.
         Returns:
-            tuple[torch.Tensor, torch.Tensor]: Processed features and the corresponding (possibly modified) mask.
+            (hidden_states, additive_attention_mask)
         """
         if self.num_learnable_registers:
-            hidden_states, attention_mask = self._replace_padded_with_learnable_registers(
-                hidden_states, attention_mask
+            hidden_states, additive_attention_mask = self._replace_padded_with_learnable_registers(
+                hidden_states, additive_attention_mask
             )
 
         indices_grid = torch.arange(hidden_states.shape[1], dtype=torch.float32, device=hidden_states.device)
@@ -199,19 +184,19 @@ class Embeddings1DConnector(torch.nn.Module):
         )
 
         for block in self.transformer_1d_blocks:
-            hidden_states = block(hidden_states, attention_mask=attention_mask, pe=freqs_cis)
+            hidden_states = block(hidden_states, additive_attention_mask=additive_attention_mask, pe=freqs_cis)
 
         hidden_states = rms_norm(hidden_states)
 
-        return hidden_states, attention_mask
+        return hidden_states, additive_attention_mask
 
 
 class Embeddings1DConnectorConfigurator(ModelConfigurator[Embeddings1DConnector]):
     """Configurator for video embeddings connector."""
 
     @classmethod
-    def from_config(cls: type[Embeddings1DConnector], config: dict) -> Embeddings1DConnector:
-        transformer_config = config.get("transformer", {})
+    def from_metadata(cls, metadata: dict) -> Embeddings1DConnector:
+        transformer_config = metadata.get("config", {}).get("transformer", {})
         rope_type = LTXRopeType(transformer_config.get("rope_type", "split"))
         double_precision_rope = transformer_config.get("frequencies_precision", False) == "float64"
         pe_max_pos = transformer_config.get("connector_positional_embedding_max_pos", [1])
@@ -229,6 +214,7 @@ class Embeddings1DConnectorConfigurator(ModelConfigurator[Embeddings1DConnector]
             rope_type=rope_type,
             double_precision_rope=double_precision_rope,
             apply_gated_attention=transformer_config.get("connector_apply_gated_attention", False),
+            ff_bias=transformer_config.get("connector_ff_bias", True),
         )
         return connector
 
@@ -237,8 +223,8 @@ class AudioEmbeddings1DConnectorConfigurator(ModelConfigurator[Embeddings1DConne
     """Configurator for audio embeddings connector with separate dimension settings."""
 
     @classmethod
-    def from_config(cls: type[Embeddings1DConnector], config: dict) -> Embeddings1DConnector:
-        transformer_config = config.get("transformer", {})
+    def from_metadata(cls, metadata: dict) -> Embeddings1DConnector:
+        transformer_config = metadata.get("config", {}).get("transformer", {})
         rope_type = LTXRopeType(transformer_config.get("rope_type", "split"))
         double_precision_rope = transformer_config.get("frequencies_precision", False) == "float64"
         pe_max_pos = transformer_config.get("connector_positional_embedding_max_pos", [1])
@@ -265,5 +251,6 @@ class AudioEmbeddings1DConnectorConfigurator(ModelConfigurator[Embeddings1DConne
             rope_type=rope_type,
             double_precision_rope=double_precision_rope,
             apply_gated_attention=transformer_config.get("connector_apply_gated_attention", False),
+            ff_bias=transformer_config.get("connector_ff_bias", True),
         )
         return connector
