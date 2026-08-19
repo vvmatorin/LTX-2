@@ -1167,6 +1167,7 @@ class LtxvTrainer:
             vocoder=self._vocoder if generate_audio else None,
             sampling_context=sampling_ctx,
             video_scale_factors=self._training_strategy.video_scale_factors,
+            video_vae_path=resolve_video_vae_path(self._config.model.model_path, self._config.model.video_vae_path),
         )
 
         output_dir = Path(self._config.output_dir) / "samples"

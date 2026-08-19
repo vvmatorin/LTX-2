@@ -28,8 +28,18 @@ from ltx_core.guidance.perturbations import (
     PerturbationType,
 )
 from ltx_core.model.transformer.modality import Modality
+from ltx_core.devices import cuda_activation_budget_bytes
+from ltx_core.loader import SafetensorsModelStateDictLoader
 from ltx_core.model.transformer.model import X0Model
-from ltx_core.model.video_vae import DimensionSizeConfig, TileSizeConfig
+from ltx_core.model.video_vae import (
+    DimensionSizeConfig,
+    TileSizeConfig,
+    diffvae_tiling_geometry_from_vae_config,
+    estimate_diffusion_decoder_weight_bytes,
+)
+from ltx_core.model.video_vae.diffusion_tiling import recommended_decode_tiling_config
+from ltx_core.model.video_vae.diffusion_video_decoder import DiffusionVideoDecoder
+from ltx_core.model.video_vae.transformer.config import DiffVAEMode
 from ltx_core.tools import AudioLatentTools, VideoLatentTools
 from ltx_core.types import AudioLatentShape, LatentState, SpatioTemporalScaleFactors, VideoLatentShape, VideoPixelShape
 from ltx_trainer.progress import SamplingContext
@@ -133,6 +143,7 @@ class ValidationSampler:
         sampling_context: SamplingContext | None = None,
         embeddings_processor: "EmbeddingsProcessor | None" = None,
         video_scale_factors: SpatioTemporalScaleFactors | None = None,
+        video_vae_path: str | None = None,
     ):
         """Initialize the validation sampler.
         Args:
@@ -148,6 +159,16 @@ class ValidationSampler:
         self._transformer = transformer
         self._video_scale_factors = video_scale_factors or SpatioTemporalScaleFactors.default()
         self._vae_decoder = vae_decoder
+        # The diffusion decoder derives its tile overlaps from its receptive-field halos and
+        # rejects smaller ones, so its tiling comes from the checkpoint geometry instead of
+        # the conv-oriented TiledDecodingConfig numbers.
+        self._diffvae_tiling_kwargs = None
+        if isinstance(vae_decoder, DiffusionVideoDecoder) and video_vae_path is not None:
+            metadata = SafetensorsModelStateDictLoader().metadata(str(video_vae_path))
+            self._diffvae_tiling_kwargs = {
+                **diffvae_tiling_geometry_from_vae_config(metadata.get("config", {}).get("vae", {})),
+                "model_bytes": estimate_diffusion_decoder_weight_bytes(str(video_vae_path)),
+            }
         self._vae_encoder = vae_encoder
         self._text_encoder = text_encoder
         self._embeddings_processor = embeddings_processor
@@ -621,6 +642,41 @@ class ValidationSampler:
             num_blocks=self._transformer.num_blocks,
         )
 
+    def _decode_tiling_config(
+        self, latent: Tensor, device: torch.device, tiled_config: TiledDecodingConfig | None
+    ) -> TileSizeConfig | None:
+        """Tile layout for decoding ``latent``, or None for an untiled decode."""
+        if tiled_config is None or not tiled_config.enabled:
+            return None
+
+        if self._diffvae_tiling_kwargs is not None:
+            scale = self._video_scale_factors
+            _, _, latent_frames, latent_height, latent_width = latent.shape
+            return recommended_decode_tiling_config(
+                **self._diffvae_tiling_kwargs,
+                height=latent_height * scale.height,
+                width=latent_width * scale.width,
+                num_frames=(latent_frames - 1) * scale.time + 1,
+                # Matches the ModuleOps that load_video_vae_decoder applies to the diffusion decoder.
+                mode=DiffVAEMode.CHUNKED_EAGER,
+                free_bytes=cuda_activation_budget_bytes(device) if device.type == "cuda" else 0,
+            )
+
+        return TileSizeConfig(
+            frames=DimensionSizeConfig(
+                tile_size=tiled_config.tile_size_frames,
+                overlap=tiled_config.tile_overlap_frames,
+            ),
+            height=DimensionSizeConfig(
+                tile_size=tiled_config.tile_size_pixels,
+                overlap=tiled_config.tile_overlap_pixels,
+            ),
+            width=DimensionSizeConfig(
+                tile_size=tiled_config.tile_size_pixels,
+                overlap=tiled_config.tile_overlap_pixels,
+            ),
+        )
+
     def _decode_video_latent(self, latent: Tensor, config: GenerationConfig, device: torch.device) -> Tensor:
         """Decode patchified video latent to pixel space."""
         # Unpatchify
@@ -642,33 +698,12 @@ class ValidationSampler:
         # Decode - ensure bfloat16 to match decoder weights
         self._vae_decoder.to(device)
         unpatchified = unpatchified.to(dtype=torch.bfloat16)
-        tiled_config = config.tiled_decoding
 
-        if tiled_config is not None and tiled_config.enabled:
-            # Use tiled decoding for reduced VRAM
-            tiling_config = TileSizeConfig(
-                frames=DimensionSizeConfig(
-                    tile_size=tiled_config.tile_size_frames,
-                    overlap=tiled_config.tile_overlap_frames,
-                ),
-                height=DimensionSizeConfig(
-                    tile_size=tiled_config.tile_size_pixels,
-                    overlap=tiled_config.tile_overlap_pixels,
-                ),
-                width=DimensionSizeConfig(
-                    tile_size=tiled_config.tile_size_pixels,
-                    overlap=tiled_config.tile_overlap_pixels,
-                ),
-            )
-            chunks = []
-            for video_chunk in self._vae_decoder.tiled_decode(
-                unpatchified,
-                tiling_config=tiling_config,
-            ):
-                chunks.append(video_chunk)
+        tiling_config = self._decode_tiling_config(unpatchified, device, config.tiled_decoding)
+        if tiling_config is not None:
+            chunks = list(self._vae_decoder.tiled_decode(unpatchified, tiling_config=tiling_config))
             decoded_video = torch.cat(chunks, dim=2)
         else:
-            # Standard full decoding
             decoded_video = self._vae_decoder(unpatchified)
 
         decoded_video = ((decoded_video + 1.0) / 2.0).clamp(0.0, 1.0)
@@ -748,31 +783,11 @@ class ValidationSampler:
         # Ensure latent is bfloat16 to match decoder weights
         latent = video_state.latent.to(dtype=torch.bfloat16)
 
-        if tiled_config is not None and tiled_config.enabled:
-            # Use tiled decoding for reduced VRAM
-            tiling_config = TileSizeConfig(
-                frames=DimensionSizeConfig(
-                    tile_size=tiled_config.tile_size_frames,
-                    overlap=tiled_config.tile_overlap_frames,
-                ),
-                height=DimensionSizeConfig(
-                    tile_size=tiled_config.tile_size_pixels,
-                    overlap=tiled_config.tile_overlap_pixels,
-                ),
-                width=DimensionSizeConfig(
-                    tile_size=tiled_config.tile_size_pixels,
-                    overlap=tiled_config.tile_overlap_pixels,
-                ),
-            )
-            chunks = []
-            for video_chunk in self._vae_decoder.tiled_decode(
-                latent,
-                tiling_config=tiling_config,
-            ):
-                chunks.append(video_chunk)
+        tiling_config = self._decode_tiling_config(latent, device, tiled_config)
+        if tiling_config is not None:
+            chunks = list(self._vae_decoder.tiled_decode(latent, tiling_config=tiling_config))
             decoded_video = torch.cat(chunks, dim=2)
         else:
-            # Standard full decoding
             decoded_video = self._vae_decoder(latent)
 
         decoded_video = ((decoded_video + 1.0) / 2.0).clamp(0.0, 1.0)
