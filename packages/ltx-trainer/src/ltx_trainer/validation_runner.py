@@ -55,16 +55,26 @@ DEFAULT_IMAGE_CRF = 33
 
 
 @dataclass
-class CachedPromptEmbeddings:
-    """Pre-computed text embeddings for a validation prompt.
-    These embeddings are computed once at training start and reused for all validation runs,
-    avoiding the need to load the full Gemma text encoder during validation.
-    """
+class PromptEmbeddings:
+    """Processed text-context tensors for one prompt (positive and optional negative)."""
 
     video_context_positive: Tensor  # [1, seq_len, hidden_dim]
     audio_context_positive: Tensor  # [1, seq_len, hidden_dim]
     video_context_negative: Tensor | None = None
     audio_context_negative: Tensor | None = None
+
+    def to(self, device: torch.device) -> "PromptEmbeddings":
+        """Return a copy with all tensors moved to ``device``."""
+        return PromptEmbeddings(
+            video_context_positive=self.video_context_positive.to(device),
+            audio_context_positive=self.audio_context_positive.to(device),
+            video_context_negative=(
+                self.video_context_negative.to(device) if self.video_context_negative is not None else None
+            ),
+            audio_context_negative=(
+                self.audio_context_negative.to(device) if self.audio_context_negative is not None else None
+            ),
+        )
 
 
 @dataclass
@@ -76,7 +86,7 @@ class TiledDecodingConfig:
     Defaults match the recommended values from ltx-core tests.
     """
 
-    enabled: bool = True  # Whether to use tiled decoding (enabled by default)
+    enabled: bool = False  # Whether to use tiled decoding (disabled by default)
     tile_size_pixels: int = 192  # Spatial tile size in pixels (must be ≥64 and divisible by 32)
     tile_overlap_pixels: int = 64  # Spatial tile overlap in pixels (must be divisible by 32)
     tile_size_frames: int = 48  # Temporal tile size in frames (must be ≥16 and divisible by 8)
@@ -101,17 +111,17 @@ class GenerationConfig:
     reference_downscale_factor: int = 1  # For IC-LoRA: downscale factor (1 = same resolution, 2 = half resolution)
     generate_audio: bool = True  # Whether to generate audio alongside video
     include_reference_in_output: bool = False  # For IC-LoRA: concatenate original reference with generated output
-    cached_embeddings: CachedPromptEmbeddings | None = None  # Pre-computed text embeddings (avoids loading Gemma)
+    cached_embeddings: PromptEmbeddings | None = None  # Pre-computed text embeddings (avoids loading Gemma)
     stg_scale: float = 0.0  # STG strength (0.0 = disabled, recommended: 1.0)
     stg_blocks: list[int] | None = None  # Transformer blocks to perturb (None = all, recommended: [29])
     stg_mode: Literal["stg_av", "stg_v"] = "stg_av"  # STG mode: "stg_av" (audio+video) or "stg_v" (video only)
-    # Tiled decoding config: None = use defaults (enabled), False = disable, or TiledDecodingConfig for custom settings
+    # Tiled decoding config: None or False = use defaults (disabled), or TiledDecodingConfig for custom settings
     tiled_decoding: TiledDecodingConfig | Literal[False] | None = None
 
     def __post_init__(self) -> None:
         """Apply default tiled decoding config if not provided."""
         if self.tiled_decoding is None:
-            # Use default config with tiling enabled
+            # Use default config with tiling disabled
             object.__setattr__(self, "tiled_decoding", TiledDecodingConfig())
         elif self.tiled_decoding is False:
             # Explicitly disabled - use config with enabled=False
@@ -208,7 +218,7 @@ class ValidationSampler:
     def _generate_standard(self, config: GenerationConfig, device: torch.device) -> tuple[Tensor, Tensor | None]:
         """Standard generation (text-to-video or image-to-video)."""
         # Get prompt embeddings (from cache or encode on-the-fly)
-        v_ctx_pos, a_ctx_pos, v_ctx_neg, a_ctx_neg = self._get_prompt_embeddings(config, device)
+        embeddings = self._get_prompt_embeddings(config, device)
 
         # Setup generator
         generator = torch.Generator(device=device).manual_seed(config.seed)
@@ -218,33 +228,27 @@ class ValidationSampler:
         audio_tools = self._create_audio_latent_tools(config) if config.generate_audio else None
 
         # Create initial states
-        video_clean_state = video_tools.create_initial_state(device=device, dtype=torch.bfloat16)
-        audio_clean_state = (
-            audio_tools.create_initial_state(device=device, dtype=torch.bfloat16) if audio_tools else None
-        )
+        video_clean = video_tools.create_initial_state(device=device, dtype=torch.bfloat16)
+        audio_clean = audio_tools.create_initial_state(device=device, dtype=torch.bfloat16) if audio_tools else None
 
         # Apply image conditioning if provided
         if config.condition_image is not None:
-            video_clean_state = self._apply_image_conditioning(
-                video_clean_state, config.condition_image, config, device
-            )
+            video_clean = self._apply_image_conditioning(video_clean, config.condition_image, config, device)
 
         # Add noise
         noiser = GaussianNoiser(generator=generator)
-        video_state = noiser(latent_state=video_clean_state, noise_scale=1.0)
-        audio_state = noiser(latent_state=audio_clean_state, noise_scale=1.0) if audio_clean_state else None
+        video_state = noiser(latent_state=video_clean, noise_scale=1.0)
+        audio_state = noiser(latent_state=audio_clean, noise_scale=1.0) if audio_clean else None
 
         # Run denoising loop
         video_state, audio_state = self._run_denoising(
             config=config,
             video_state=video_state,
             audio_state=audio_state,
-            video_clean_state=video_clean_state,
-            audio_clean_state=audio_clean_state,
-            v_ctx_pos=v_ctx_pos,
-            a_ctx_pos=a_ctx_pos,
-            v_ctx_neg=v_ctx_neg,
-            a_ctx_neg=a_ctx_neg,
+            video_clean=video_clean,
+            audio_clean=audio_clean,
+            embeddings=embeddings,
+            num_target_tokens=video_tools.patchifier.get_token_count(video_tools.target_shape),
             device=device,
         )
 
@@ -272,7 +276,7 @@ class ValidationSampler:
           is concatenated side-by-side with the generated video
         """
         # Get prompt embeddings (from cache or encode on-the-fly)
-        v_ctx_pos, a_ctx_pos, v_ctx_neg, a_ctx_neg = self._get_prompt_embeddings(config, device)
+        embeddings = self._get_prompt_embeddings(config, device)
 
         # Setup generator
         generator = torch.Generator(device=device).manual_seed(config.seed)
@@ -303,11 +307,15 @@ class ValidationSampler:
         # Create combined state (reference + target)
         # denoise_mask shape is [B, seq_len, 1] after patchification
         ref_denoise_mask = torch.zeros(1, ref_seq_len, 1, device=device, dtype=torch.float32)
+        # Reference tokens are never keyframes (matches VideoConditionByReferenceLatent,
+        # which extends the mask with marked=False); only the target's marks survive.
+        ref_keyframes_mask = torch.zeros(1, ref_seq_len, 1, device=device, dtype=torch.float32)
         combined_clean_state = LatentState(
             latent=torch.cat([ref_latent, target_clean_state.latent], dim=1),
             denoise_mask=torch.cat([ref_denoise_mask, target_clean_state.denoise_mask], dim=1),
             positions=torch.cat([ref_positions, target_clean_state.positions], dim=2),
             clean_latent=torch.cat([ref_latent, target_clean_state.clean_latent], dim=1),
+            keyframes_mask=torch.cat([ref_keyframes_mask, target_clean_state.keyframes_mask], dim=1),
         )
 
         # Add noise (only to the target portion via denoise_mask)
@@ -316,22 +324,18 @@ class ValidationSampler:
 
         # Create audio state if needed
         audio_tools = self._create_audio_latent_tools(config) if config.generate_audio else None
-        audio_clean_state = (
-            audio_tools.create_initial_state(device=device, dtype=torch.bfloat16) if audio_tools else None
-        )
-        audio_state = noiser(latent_state=audio_clean_state, noise_scale=1.0) if audio_clean_state else None
+        audio_clean = audio_tools.create_initial_state(device=device, dtype=torch.bfloat16) if audio_tools else None
+        audio_state = noiser(latent_state=audio_clean, noise_scale=1.0) if audio_clean else None
 
         # Run denoising loop
         combined_state, audio_state = self._run_denoising(
             config=config,
             video_state=combined_state,
             audio_state=audio_state,
-            video_clean_state=combined_clean_state,
-            audio_clean_state=audio_clean_state,
-            v_ctx_pos=v_ctx_pos,
-            a_ctx_pos=a_ctx_pos,
-            v_ctx_neg=v_ctx_neg,
-            a_ctx_neg=a_ctx_neg,
+            video_clean=combined_clean_state,
+            audio_clean=audio_clean,
+            embeddings=embeddings,
+            num_target_tokens=video_tools.patchifier.get_token_count(video_tools.target_shape),
             device=device,
         )
 
@@ -409,6 +413,7 @@ class ValidationSampler:
             denoise_mask=new_denoise_mask,
             positions=video_state.positions,
             clean_latent=new_clean_latent,
+            keyframes_mask=video_state.keyframes_mask,
         )
 
     @staticmethod
@@ -505,20 +510,23 @@ class ValidationSampler:
         config: GenerationConfig,
         video_state: LatentState,
         audio_state: LatentState | None,
-        video_clean_state: LatentState,
-        audio_clean_state: LatentState | None,
-        v_ctx_pos: Tensor,
-        a_ctx_pos: Tensor,
-        v_ctx_neg: Tensor | None,
-        a_ctx_neg: Tensor | None,
+        video_clean: LatentState,
+        audio_clean: LatentState | None,
+        embeddings: PromptEmbeddings,
+        num_target_tokens: int,
         device: torch.device,
     ) -> tuple[LatentState, LatentState | None]:
         """Run the denoising loop using X0 prediction with CFG and optional STG."""
         scheduler = LTX2Scheduler()
-        sigmas = scheduler.execute(steps=config.num_inference_steps).to(device).float()
         stepper = EulerDiffusionStep()
         cfg_guider = CFGGuider(config.guidance_scale)
         stg_guider = STGGuider(config.stg_scale)
+
+        sigmas = (
+            scheduler.execute(steps=config.num_inference_steps, default_number_of_tokens=num_target_tokens)
+            .to(device)
+            .float()
+        )
 
         # Build STG perturbation config if STG is enabled
         stg_perturbation_config = self._build_stg_perturbation_config(config) if stg_guider.enabled() else None
@@ -530,8 +538,9 @@ class ValidationSampler:
             sigma=sigmas[0].repeat(video_state.latent.shape[0]),
             timesteps=video_state.denoise_mask,
             positions=video_state.positions,
-            context=v_ctx_pos,
+            context=embeddings.video_context_positive,
             context_mask=None,
+            keyframes_mask=video_state.keyframes_mask,
         )
 
         # Audio modality is None when not generating audio
@@ -543,7 +552,7 @@ class ValidationSampler:
                 sigma=sigmas[0].repeat(audio_state.latent.shape[0]),
                 timesteps=audio_state.denoise_mask,
                 positions=audio_state.positions,
-                context=a_ctx_pos,
+                context=embeddings.audio_context_positive,
                 context_mask=None,
             )
 
@@ -576,9 +585,10 @@ class ValidationSampler:
                 denoised_video, denoised_audio = pos_video, pos_audio
 
                 # Apply CFG if guidance_scale != 1.0
-                if cfg_guider.enabled() and v_ctx_neg is not None:
-                    video_neg = replace(video, context=v_ctx_neg)
-                    audio_neg = replace(audio, context=a_ctx_neg) if audio is not None else None
+                if cfg_guider.enabled() and embeddings.video_context_negative is not None:
+                    video_neg = replace(video, context=embeddings.video_context_negative)
+                    audio_neg = replace(
+                        audio, context=embeddings.audio_context_negative) if audio is not None else None
                     neg_video, neg_audio = x0_model(video=video_neg, audio=audio_neg, perturbations=None)
 
                     denoised_video = denoised_video + cfg_guider.delta(pos_video, neg_video)
@@ -595,11 +605,11 @@ class ValidationSampler:
                         denoised_audio = denoised_audio + stg_guider.delta(pos_audio, perturbed_audio)
 
                 # Apply conditioning mask (keep conditioned tokens clean)
-                denoised_video = denoised_video * video_state.denoise_mask + video_clean_state.latent.float() * (
+                denoised_video = denoised_video * video_state.denoise_mask + video_clean.latent.float() * (
                     1 - video_state.denoise_mask
                 )
-                if audio is not None and audio_state is not None and audio_clean_state is not None:
-                    denoised_audio = denoised_audio * audio_state.denoise_mask + audio_clean_state.latent.float() * (
+                if audio is not None and audio_state is not None and audio_clean is not None:
+                    denoised_audio = denoised_audio * audio_state.denoise_mask + audio_clean.latent.float() * (
                         1 - audio_state.denoise_mask
                     )
 
@@ -730,32 +740,19 @@ class ValidationSampler:
         if config.cached_embeddings is None and self._embeddings_processor is None:
             raise ValueError("embeddings_processor is required when encoding prompts on-the-fly")
 
-    def _get_prompt_embeddings(
-        self, config: GenerationConfig, device: torch.device
-    ) -> tuple[Tensor, Tensor, Tensor | None, Tensor | None]:
+    def _get_prompt_embeddings(self, config: GenerationConfig, device: torch.device) -> PromptEmbeddings:
         """Get prompt embeddings from config cache or encode on-the-fly."""
         if config.cached_embeddings is not None:
-            # Use pre-computed embeddings from config
-            cached = config.cached_embeddings
-            v_ctx_pos = cached.video_context_positive.to(device)
-            a_ctx_pos = cached.audio_context_positive.to(device)
-            v_ctx_neg = cached.video_context_negative.to(device) if cached.video_context_negative is not None else None
-            a_ctx_neg = cached.audio_context_negative.to(device) if cached.audio_context_negative is not None else None
-            return v_ctx_pos, a_ctx_pos, v_ctx_neg, a_ctx_neg
-
-        # Fall back to encoding on-the-fly
+            return config.cached_embeddings.to(device)
         return self._encode_prompts(config, device)
 
-    def _encode_prompts(
-        self, config: GenerationConfig, device: torch.device
-    ) -> tuple[Tensor, Tensor, Tensor | None, Tensor | None]:
+    def _encode_prompts(self, config: GenerationConfig, device: torch.device) -> PromptEmbeddings:
         """Encode positive and negative prompts using the text encoder + embeddings processor."""
         self._text_encoder.to(device)
         self._embeddings_processor.to(device)
 
         pos_hs, pos_mask = self._text_encoder.encode([config.prompt])[0]
         pos_out = self._embeddings_processor.process_hidden_states(pos_hs, pos_mask)
-        v_ctx_pos, a_ctx_pos = pos_out.video_encoding, pos_out.audio_encoding
 
         v_ctx_neg, a_ctx_neg = None, None
         if config.guidance_scale != 1.0:
@@ -766,7 +763,12 @@ class ValidationSampler:
         # Move the base Gemma model to CPU
         self._text_encoder.model.to("cpu")
 
-        return v_ctx_pos, a_ctx_pos, v_ctx_neg, a_ctx_neg
+        return PromptEmbeddings(
+            video_context_positive=pos_out.video_encoding,
+            audio_context_positive=pos_out.audio_encoding,
+            video_context_negative=v_ctx_neg,
+            audio_context_negative=a_ctx_neg,
+        )
 
     def _decode_video(
         self, video_state: LatentState, device: torch.device, tiled_config: TiledDecodingConfig | None = None

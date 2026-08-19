@@ -218,6 +218,10 @@ class TextToVideoStrategy(TrainingStrategy):
             dtype=torch.float32,
         )
 
+        # Inference always marks the first latent frame; match it so the learned keyframe embedding applies here too.
+        keyframes_mask = torch.zeros(batch_size, video_seq_len, 1, device=device, dtype=torch.float32)
+        keyframes_mask[:, : height * width] = 1.0
+
         # Create video Modality
         video_modality = Modality(
             enabled=True,
@@ -227,6 +231,7 @@ class TextToVideoStrategy(TrainingStrategy):
             positions=video_positions,
             context=video_prompt_embeds,
             context_mask=prompt_attention_mask,
+            keyframes_mask=keyframes_mask,
         )
 
         # Video loss mask: float weights for loss computation (0 = excluded, 1 = normal, >1 = boosted).

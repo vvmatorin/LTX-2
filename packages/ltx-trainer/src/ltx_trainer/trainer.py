@@ -52,7 +52,7 @@ from ltx_trainer.timestep_samplers import SAMPLERS
 from ltx_trainer.training_state import ConfigFingerprint, RngStates, TrainingState
 from ltx_trainer.training_strategies import get_training_strategy
 from ltx_trainer.utils import open_image_as_srgb, save_image
-from ltx_trainer.validation_runner import CachedPromptEmbeddings, GenerationConfig, ValidationSampler
+from ltx_trainer.validation_runner import GenerationConfig, PromptEmbeddings, ValidationSampler
 from ltx_trainer.video_utils import read_video, save_video
 
 # Disable irrelevant warnings from transformers
@@ -484,7 +484,7 @@ class LtxvTrainer:
         return loss, model_inputs.sigma.detach()
 
     @free_gpu_memory_context(after=True)
-    def _load_text_encoder_and_cache_embeddings(self) -> list[CachedPromptEmbeddings] | None:
+    def _load_text_encoder_and_cache_embeddings(self) -> list[PromptEmbeddings] | None:
         """Load text encoder + embeddings processor, compute and cache validation embeddings."""
 
         # This method:
@@ -528,7 +528,7 @@ class LtxvTrainer:
                     neg_out = self._embeddings_processor.process_hidden_states(neg_hs, neg_mask)
 
                     cached_embeddings.append(
-                        CachedPromptEmbeddings(
+                        PromptEmbeddings(
                             video_context_positive=pos_out.video_encoding.cpu(),
                             audio_context_positive=pos_out.audio_encoding.cpu(),
                             video_context_negative=neg_out.video_encoding.cpu(),

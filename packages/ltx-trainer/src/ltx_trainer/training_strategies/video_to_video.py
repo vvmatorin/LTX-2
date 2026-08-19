@@ -259,6 +259,10 @@ class VideoToVideoStrategy(TrainingStrategy):
 
             positions = torch.cat([ref_positions, target_positions], dim=2)
 
+        # Mark the target's first latent frame as inference does; reference tokens are never keyframes.
+        keyframes_mask = torch.zeros(batch_size, ref_seq_len + target_seq_len, 1, device=device, dtype=torch.float32)
+        keyframes_mask[:, ref_seq_len : ref_seq_len + height * width] = 1.0
+
         # Create video Modality
         video_modality = Modality(
             enabled=True,
@@ -268,6 +272,7 @@ class VideoToVideoStrategy(TrainingStrategy):
             positions=positions,
             context=prompt_embeds,
             context_mask=prompt_attention_mask,
+            keyframes_mask=keyframes_mask,
         )
 
         # Loss mask: float weights (0 = excluded, 1 = normal, >1 = boosted).
