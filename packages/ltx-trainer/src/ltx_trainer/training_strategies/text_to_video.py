@@ -415,7 +415,7 @@ class TextToVideoStrategy(TrainingStrategy):
         video_loss = None
         if video_pred is not None and inputs.video_targets is not None:
             # Video loss: normalize per-sample over (seq, channels) → [B,]
-            video_loss = (video_pred - inputs.video_targets).pow(2)
+            video_loss = (video_pred.float() - inputs.video_targets.float()).pow(2)
             video_loss_mask = inputs.video_loss_mask.unsqueeze(-1).float()
             video_loss = video_loss.mul(video_loss_mask).mean(dim=[-2, -1])
             video_loss = video_loss.div(video_loss_mask.mean(dim=[-2, -1]).clamp(min=1e-8))
@@ -432,7 +432,7 @@ class TextToVideoStrategy(TrainingStrategy):
 
         # Audio loss per-sample [B,], zeroed for video-only samples.
         audio_loss_mask = inputs.audio_loss_mask.unsqueeze(-1).float()
-        audio_loss = (audio_pred - inputs.audio_targets).pow(2)
+        audio_loss = (audio_pred.float() - inputs.audio_targets.float()).pow(2)
         audio_loss = audio_loss.mul(audio_loss_mask).mean(dim=[-2, -1])
 
         mask_mean = audio_loss_mask.mean(dim=[-2, -1])

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { ProcessingJob } from '@/lib/types';
+import type { ModelStream, ProcessingJob } from '@/lib/types';
 import { formatDuration } from '@/lib/format';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState } from '@/components/EmptyState';
@@ -10,10 +10,12 @@ import { Music, AlertTriangle } from 'lucide-react';
 interface Props {
   jobs: ProcessingJob[];
   folderId: number;
+  stream: ModelStream;
 }
 
 interface AudioJobConfig {
   folderId?: number;
+  modelStream?: string;
   audioOnly?: boolean;
   outputFolderPath?: string;
   datasetPath?: string;
@@ -21,7 +23,7 @@ interface AudioJobConfig {
   maxDuration?: number | null;
 }
 
-export function AudioProcessingStatus({ jobs, folderId }: Props) {
+export function AudioProcessingStatus({ jobs, folderId, stream }: Props) {
   // Audio-only folders have a single flat `audio_only` bucket, so the jobs are
   // listed newest-first rather than laid out on a resolution x frames matrix.
   const audioJobs = useMemo(
@@ -29,9 +31,9 @@ export function AudioProcessingStatus({ jobs, folderId }: Props) {
       jobs.filter(job => {
         if (job.type !== 'preprocess') return false;
         const cfg = job.config as AudioJobConfig;
-        return cfg.folderId === folderId && cfg.audioOnly === true;
+        return cfg.folderId === folderId && cfg.modelStream === stream && cfg.audioOnly === true;
       }),
-    [jobs, folderId],
+    [jobs, folderId, stream],
   );
 
   if (audioJobs.length === 0) {

@@ -45,6 +45,8 @@ def preprocess_dataset(  # noqa: PLR0913
     model_path: str,
     text_encoder_path: str,
     device: str,
+    video_vae_path: str | None = None,
+    audio_vae_path: str | None = None,
     remove_llm_prefixes: bool = False,
     reference_column: str | None = None,
     reference_downscale_factor: int = 1,
@@ -94,6 +96,8 @@ def preprocess_dataset(  # noqa: PLR0913
             resolution_buckets=resolution_buckets,
             output_dir=str(latents_dir),
             model_path=model_path,
+            video_vae_path=video_vae_path,
+            audio_vae_path=audio_vae_path,
             batch_size=batch_size,
             device=device,
             vae_tiling=vae_tiling,
@@ -134,6 +138,8 @@ def preprocess_dataset(  # noqa: PLR0913
                 resolution_buckets=reference_buckets,
                 output_dir=str(reference_latents_dir),
                 model_path=model_path,
+                video_vae_path=video_vae_path,
+                audio_vae_path=audio_vae_path,
                 batch_size=batch_size,
                 device=device,
                 vae_tiling=vae_tiling,
@@ -149,6 +155,8 @@ def preprocess_dataset(  # noqa: PLR0913
             device=device,
             vae_tiling=vae_tiling,
             with_audio=with_audio,
+            video_vae_path=video_vae_path,
+            audio_vae_path=audio_vae_path,
         )
         decoder.decode(latents_dir, output_base / "decoded_videos")
 
@@ -205,11 +213,19 @@ def main(  # noqa: PLR0913
     ),
     model_path: str = typer.Option(
         ...,
-        help="Path to LTX-2 checkpoint (.safetensors file)",
+        help="Path to a unified LTX checkpoint or split-pack transformer (.safetensors file)",
     ),
     text_encoder_path: str = typer.Option(
         ...,
-        help="Path to Gemma text encoder directory",
+        help="Path to the Gemma text encoder directory, or the packed text-encoder safetensors of a split pack",
+    ),
+    video_vae_path: str | None = typer.Option(
+        default=None,
+        help="Video VAE safetensors (required for a split LTX-2.5 pack)",
+    ),
+    audio_vae_path: str | None = typer.Option(
+        default=None,
+        help="Audio VAE safetensors (required for a split LTX-2.5 pack when --with-audio is set)",
     ),
     caption_column: str = typer.Option(
         default="caption",
@@ -327,6 +343,8 @@ def main(  # noqa: PLR0913
         model_path=model_path,
         text_encoder_path=text_encoder_path,
         device=device,
+        video_vae_path=video_vae_path,
+        audio_vae_path=audio_vae_path,
         remove_llm_prefixes=remove_llm_prefixes,
         reference_column=reference_column,
         reference_downscale_factor=reference_downscale_factor,

@@ -4,8 +4,12 @@ import { settings } from '@/db/schema';
 import { upsertSettings } from '@/lib/settings';
 
 const DEFAULT_SETTINGS: Record<string, string> = {
-  modelPath: '',
-  textEncoderPath: '',
+  ltx23ModelPath: '',
+  ltx23TextEncoderPath: '',
+  ltx25ModelPath: '',
+  ltx25TextEncoderPath: '',
+  ltx25VideoVaePath: '',
+  ltx25AudioVaePath: '',
   outputDir: '',
   datasetDir: '',
   scriptsDir: '',

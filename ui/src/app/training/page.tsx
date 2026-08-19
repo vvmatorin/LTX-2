@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import type { TrainingConfig, ProcessingJob } from '@/lib/types';
+import type { ModelStream, TrainingConfig, ProcessingJob } from '@/lib/types';
+import { MODEL_STREAMS, MODEL_STREAM_LABELS, pickDefaultStream, streamPaths } from '@/lib/types';
 import { buildDefaultConfig, extractTrainingConfig } from '@/lib/training';
 import { useDatasets } from '@/hooks/useDatasets';
 import { useRuns } from '@/hooks/useRuns';
@@ -50,13 +51,8 @@ function TrainingPageInner() {
   useEffect(() => {
     if (fromJobId) return;
     if (settings && !config) {
-      setConfig(
-        buildDefaultConfig(
-          settings.modelPath || '',
-          settings.textEncoderPath || '',
-          settings.outputDir || '/tmp/ltx-training',
-        ),
-      );
+      const stream = pickDefaultStream(settings);
+      setConfig(buildDefaultConfig(stream, streamPaths(settings, stream), settings.outputDir || '/tmp/ltx-training'));
     }
   }, [fromJobId, settings, config]);
 
@@ -65,14 +61,16 @@ function TrainingPageInner() {
     if (appliedFromJob.current === fromJobId) return;
     appliedFromJob.current = fromJobId;
 
+    const stream = pickDefaultStream(settings);
+    const defaults = buildDefaultConfig(
+      stream,
+      streamPaths(settings, stream),
+      settings.outputDir || '/tmp/ltx-training',
+    );
+
     apiFetch<ProcessingJob>(`/api/jobs/${fromJobId}`)
       .then(job => {
         if (job.type !== 'training') return;
-        const defaults = buildDefaultConfig(
-          settings.modelPath || '',
-          settings.textEncoderPath || '',
-          settings.outputDir || '/tmp/ltx-training',
-        );
         const restored = extractTrainingConfig(job.config as Record<string, unknown>, defaults);
         setConfig(restored.config);
         setGpuMode(restored.gpuMode);
@@ -80,13 +78,7 @@ function TrainingPageInner() {
         if (restored.datasetName) setSelectedDataset(restored.datasetName);
       })
       .catch(() => {
-        setConfig(
-          buildDefaultConfig(
-            settings.modelPath || '',
-            settings.textEncoderPath || '',
-            settings.outputDir || '/tmp/ltx-training',
-          ),
-        );
+        setConfig(defaults);
       });
   }, [fromJobId, settings]);
 
@@ -99,6 +91,13 @@ function TrainingPageInner() {
   }
 
   const activeDataset = selectedDataset || datasets[0]?.name || '';
+
+  const handleStreamChange = (stream: ModelStream) => {
+    if (!settings) return;
+    setConfig(prev =>
+      prev ? { ...prev, model: { ...prev.model, modelStream: stream, ...streamPaths(settings, stream) } } : prev,
+    );
+  };
 
   const handleStartTraining = async () => {
     setStartError(null);
@@ -113,7 +112,7 @@ function TrainingPageInner() {
         return;
       }
     }
-    const outputName = `Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
+    const outputName = `[${config.model.modelStream}] Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
     try {
       await createRun({
         name: outputName,
@@ -139,7 +138,25 @@ function TrainingPageInner() {
               <CardTitle className="text-lg">Run Setup</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label className="text-xs">Model</Label>
+                  <Select
+                    value={config.model.modelStream}
+                    onValueChange={v => v && handleStreamChange(v as ModelStream)}
+                  >
+                    <SelectTrigger className="w-full text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MODEL_STREAMS.map(ms => (
+                        <SelectItem key={ms} value={ms}>
+                          {MODEL_STREAM_LABELS[ms]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Training Dataset</Label>
                   <Select value={activeDataset} onValueChange={v => v && setSelectedDataset(v)}>
@@ -149,7 +166,7 @@ function TrainingPageInner() {
                     <SelectContent>
                       {datasets.map(ds => (
                         <SelectItem key={ds.name} value={ds.name}>
-                          {ds.name} ({ds.buckets.length} buckets)
+                          {ds.name} ({ds.buckets.length} buckets, {ds.modelStream})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -215,6 +232,12 @@ function TrainingPageInner() {
                 <span className="text-muted-foreground">Dataset</span>
                 <Badge variant="outline" className="text-[10px]">
                   {activeDataset || '—'}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Model</span>
+                <Badge variant="secondary" className="text-[10px]">
+                  {MODEL_STREAM_LABELS[config.model.modelStream]}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">

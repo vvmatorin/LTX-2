@@ -17,8 +17,10 @@ checkpoints/
 
 # Other files
 .DS_Store
-tmp
 .wandb
+projects/
+tmp
+wandb/
 
 # Model checkpoints
 *.ckpt
@@ -27,14 +29,23 @@ tmp
 *.sft
 
 # Media files
+*.exr
 *.gif
 *.heic
 *.heif
 *.jpg
 *.jpeg
+*.json
 *.m4a
 *.mov
+*.mp3
 *.mp4
 *.png
 *.wav
 *.webp
+
+# Binary files
+*.so
+
+# Other
+ignore/

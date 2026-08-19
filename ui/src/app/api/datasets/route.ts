@@ -6,7 +6,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { parseJobConfig, safeId } from '@/lib/utils';
 import fs from 'fs';
 import path from 'path';
-import type { DatasetBucket } from '@/lib/types';
+import type { DatasetBucket, ModelStream } from '@/lib/types';
 
 export async function GET() {
   const rows = db.select().from(trainingDatasets).all();
@@ -55,6 +55,8 @@ export async function POST(req: Request) {
     );
   }
 
+  const modelStream = (buckets[0]?.stream ?? 'ltx-2.5') as ModelStream;
+
   const sourceDirs = buckets.map(b => b.folderPath).filter((p): p is string => Boolean(p));
 
   if (sourceDirs.length === 0) {
@@ -66,6 +68,7 @@ export async function POST(req: Request) {
     .values({
       name: body.name as string,
       path: body.path as string,
+      modelStream,
       buckets: JSON.stringify(buckets),
     })
     .returning()
@@ -76,7 +79,7 @@ export async function POST(req: Request) {
       type: 'merge',
       name: `Dataset: ${result.path}`,
       status: 'queued',
-      config: JSON.stringify({ sourceDirs, destDir: result.path }),
+      config: JSON.stringify({ sourceDirs, modelStream, destDir: result.path }),
       queuePosition: nextQueuePosition(),
     })
     .run();

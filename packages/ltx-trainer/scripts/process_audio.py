@@ -48,7 +48,7 @@ from ltx_core.model.audio_vae import AudioProcessor
 from ltx_core.types import Audio
 from ltx_trainer import logger
 from ltx_trainer.gpu_utils import free_gpu_memory_context
-from ltx_trainer.model_loader import load_audio_vae_encoder
+from ltx_trainer.model_loader import load_audio_vae_encoder, resolve_audio_vae_path
 
 console = Console()
 
@@ -158,6 +158,7 @@ def compute_audio_latents(
     audio_column: str,
     output_dir: str,
     model_path: str,
+    audio_vae_path: str | None = None,
     device: str = "cuda",
     max_duration: float | None = None,
 ) -> None:
@@ -179,9 +180,10 @@ def compute_audio_latents(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    with console.status(f"[bold]Loading audio VAE encoder from [cyan]{model_path}[/]...", spinner="dots"):
+    audio_vae_file = resolve_audio_vae_path(model_path, audio_vae_path)
+    with console.status(f"[bold]Loading audio VAE encoder from [cyan]{audio_vae_file}[/]...", spinner="dots"):
         audio_vae_encoder = load_audio_vae_encoder(
-            checkpoint_path=model_path,
+            checkpoint_path=audio_vae_file,
             device=torch_device,
             dtype=torch.float32,  # Audio VAE needs float32 for quality.
         )
@@ -252,6 +254,7 @@ def preprocess_audio_dataset(
     model_path: str,
     text_encoder_path: str,
     device: str,
+    audio_vae_path: str | None = None,
     lora_trigger: str | None = None,
     remove_llm_prefixes: bool = False,
     load_text_encoder_in_8bit: bool = False,
@@ -291,6 +294,7 @@ def preprocess_audio_dataset(
             audio_column=audio_column,
             output_dir=str(audio_latents_dir),
             model_path=model_path,
+            audio_vae_path=audio_vae_path,
             device=device,
             max_duration=max_duration,
         )
@@ -321,11 +325,15 @@ def main(
     ),
     model_path: str = typer.Option(
         ...,
-        help="Path to LTX-2 checkpoint (.safetensors file)",
+        help="Path to a unified LTX checkpoint or split-pack transformer (.safetensors file)",
     ),
     text_encoder_path: str = typer.Option(
         ...,
-        help="Path to Gemma text encoder directory",
+        help="Path to the Gemma text encoder directory, or the packed text-encoder safetensors of a split pack",
+    ),
+    audio_vae_path: str | None = typer.Option(
+        default=None,
+        help="Audio VAE safetensors (required for a split LTX-2.5 pack)",
     ),
     caption_column: str = typer.Option(
         default="caption",
@@ -384,6 +392,7 @@ def main(
         model_path=model_path,
         text_encoder_path=text_encoder_path,
         device=device,
+        audio_vae_path=audio_vae_path,
         lora_trigger=lora_trigger,
         remove_llm_prefixes=remove_llm_prefixes,
         load_text_encoder_in_8bit=load_text_encoder_in_8bit,

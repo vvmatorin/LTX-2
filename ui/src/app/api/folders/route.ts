@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { sourceFolders, jobs } from '@/db/schema';
 import { eq, like } from 'drizzle-orm';
 import { safeId, parseJobConfig } from '@/lib/utils';
+import { MODEL_STREAMS } from '@/lib/types';
 import fs from 'fs';
 import path from 'path';
 
@@ -54,79 +55,85 @@ function syncBucketJobs(folderId: number, folderPath: string) {
   const bucketsDir = path.join(folderPath, '_buckets');
   if (!fs.existsSync(bucketsDir)) return;
 
-  const entries = fs.readdirSync(bucketsDir, { withFileTypes: true });
-  const bucketDirs = entries.filter(e => e.isDirectory() && BUCKET_DIR_PATTERN.test(e.name));
-  const hasAudioOnlyBucket = fs.existsSync(path.join(bucketsDir, 'audio_only'));
-  if (bucketDirs.length === 0 && !hasAudioOnlyBucket) return;
-
   const existingNames = new Set(
     db
       .select({ name: jobs.name })
       .from(jobs)
-      .where(like(jobs.name, `Preprocess: ${folderPath}/_buckets/%`))
+      .where(like(jobs.name, `%Preprocess: ${folderPath}/_buckets/%`))
       .all()
       .map(r => r.name),
   );
 
-  // Audio-only bucket (flat, no resolution/frame dimension).
-  if (hasAudioOnlyBucket) {
-    const audioJobName = `Preprocess: ${folderPath}/_buckets/audio_only`;
-    if (!existingNames.has(audioJobName)) {
-      const audioBucketPath = path.join(bucketsDir, 'audio_only');
+  for (const stream of MODEL_STREAMS) {
+    const streamDir = path.join(bucketsDir, stream);
+    if (!fs.existsSync(streamDir)) continue;
+
+    // Audio-only bucket (flat, no resolution/frame dimension).
+    const audioBucketPath = path.join(streamDir, 'audio_only');
+    if (fs.existsSync(path.join(audioBucketPath, '.precomputed'))) {
+      const audioJobName = `[${stream}] Preprocess: ${folderPath}/_buckets/${stream}/audio_only`;
+      if (!existingNames.has(audioJobName)) {
+        db.insert(jobs)
+          .values({
+            type: 'preprocess',
+            name: audioJobName,
+            status: 'completed',
+            config: JSON.stringify({
+              folderId,
+              folderPath,
+              outputFolderPath: audioBucketPath,
+              datasetPath: path.join(folderPath, 'dataset.json'),
+              modelStream: stream,
+              audioOnly: true,
+              withAudio: true,
+            }),
+            queuePosition: 0,
+            completedAt: new Date().toISOString(),
+          })
+          .run();
+      }
+    }
+
+    const entries = fs.readdirSync(streamDir, { withFileTypes: true });
+    const bucketDirs = entries.filter(e => e.isDirectory() && BUCKET_DIR_PATTERN.test(e.name));
+
+    for (const dir of bucketDirs) {
+      const match = BUCKET_DIR_PATTERN.exec(dir.name)!;
+      const res = Number(match[1]);
+      const fc = Number(match[2]);
+      const bucketPath = path.join(streamDir, dir.name);
+
+      const precomputed = path.join(bucketPath, '.precomputed');
+      if (!fs.existsSync(precomputed)) continue;
+      const jobName = `[${stream}] Preprocess: ${folderPath}/_buckets/${stream}/${res}_${fc}`;
+      if (existingNames.has(jobName)) continue;
+
+      const hFlip = fs.existsSync(path.join(precomputed, 'latents_h_flip'));
+      const withAudio = fs.existsSync(path.join(precomputed, 'audio_latents'));
+      const frameSampling = fc >= 100 ? 'uniform' : 'head';
+
       db.insert(jobs)
         .values({
           type: 'preprocess',
-          name: audioJobName,
+          name: jobName,
           status: 'completed',
           config: JSON.stringify({
             folderId,
+            resolution: res,
+            frameCounts: [fc],
             folderPath,
-            outputFolderPath: audioBucketPath,
+            outputFolderPath: bucketPath,
             datasetPath: path.join(folderPath, 'dataset.json'),
-            audioOnly: true,
-            withAudio: true,
+            modelStream: stream,
+            hFlip,
+            withAudio,
+            frameSampling,
           }),
           queuePosition: 0,
           completedAt: new Date().toISOString(),
         })
         .run();
     }
-  }
-
-  for (const dir of bucketDirs) {
-    const match = BUCKET_DIR_PATTERN.exec(dir.name)!;
-    const res = Number(match[1]);
-    const fc = Number(match[2]);
-    const jobName = `Preprocess: ${folderPath}/_buckets/${res}_${fc}`;
-
-    if (existingNames.has(jobName)) continue;
-
-    const bucketPath = path.join(bucketsDir, dir.name);
-    const precomputed = path.join(bucketPath, '.precomputed');
-    const hFlip = fs.existsSync(path.join(precomputed, 'latents_h_flip'));
-    const withAudio = fs.existsSync(path.join(precomputed, 'audio_latents'));
-    const frameSampling = fc >= 100 ? 'uniform' : 'head';
-
-    db.insert(jobs)
-      .values({
-        type: 'preprocess',
-        name: jobName,
-        status: 'completed',
-        config: JSON.stringify({
-          folderId,
-          resolution: res,
-          frameCounts: [fc],
-          folderPath,
-          outputFolderPath: bucketPath,
-          datasetPath: path.join(folderPath, 'dataset.json'),
-          hFlip,
-          withAudio,
-          frameSampling,
-        }),
-        queuePosition: 0,
-        completedAt: new Date().toISOString(),
-      })
-      .run();
   }
 }
 

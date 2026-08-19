@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     .insert(jobs)
     .values({
       type: 'training',
-      name: runName || `Train: ${outputDir}`,
+      name: runName || `[${uiConfig.model.modelStream}] Train: ${outputDir}`,
       status: 'queued',
       config: JSON.stringify({
         ...uiConfig,
@@ -111,6 +111,8 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
     model: {
       model_path: uiConfig.model.modelPath || null,
       text_encoder_path: uiConfig.model.textEncoderPath || null,
+      video_vae_path: uiConfig.model.videoVaePath || null,
+      audio_vae_path: uiConfig.model.audioVaePath || null,
       training_mode: uiConfig.model.trainingMode || 'lora',
       load_checkpoint: uiConfig.model.loadCheckpoint || null,
     },
@@ -170,7 +172,6 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       seed: uiConfig.validation.seed,
       inference_steps: uiConfig.validation.inferenceSteps,
       interval: uiConfig.validation.interval,
-      videos_per_prompt: uiConfig.validation.videosPerPrompt,
       guidance_scale: uiConfig.validation.guidanceScale,
       stg_scale: 0.0,
       stg_blocks: null,

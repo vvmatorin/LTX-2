@@ -4,6 +4,8 @@ import { jobs, sourceFolders } from '@/db/schema';
 import { nextQueuePosition } from '@/db/queries';
 import { eq, desc, and, type SQL } from 'drizzle-orm';
 import { parseJobConfig } from '@/lib/utils';
+import { getSetting } from '@/lib/settings';
+import { streamPaths, type ModelStream, type StreamPathSettings } from '@/lib/types';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -48,7 +50,8 @@ export async function GET(req: Request) {
       const config = parseJobConfig(r.config) ?? {};
       let outputExists: boolean | undefined;
       if (r.type === 'preprocess' && r.status === 'completed') {
-        const outputFolderPath = (config as Record<string, unknown>).outputFolderPath as string | undefined;
+        const cfg = config as Record<string, unknown>;
+        const outputFolderPath = cfg.outputFolderPath as string | undefined;
         outputExists = outputFolderPath ? fs.existsSync(path.join(outputFolderPath, '.precomputed')) : false;
       }
       return {
@@ -70,6 +73,27 @@ export async function POST(req: Request) {
   const config: Record<string, unknown> = { ...(body.config as Record<string, unknown>) };
 
   if (body.type === 'preprocess' && config.folderId) {
+    const stream = config.modelStream as ModelStream | undefined;
+    if (!stream) {
+      return NextResponse.json({ error: 'modelStream is required for preprocess jobs' }, { status: 400 });
+    }
+    const settingsSnapshot = {
+      ltx23ModelPath: getSetting('ltx23ModelPath') || '',
+      ltx23TextEncoderPath: getSetting('ltx23TextEncoderPath') || '',
+      ltx25ModelPath: getSetting('ltx25ModelPath') || '',
+      ltx25TextEncoderPath: getSetting('ltx25TextEncoderPath') || '',
+      ltx25VideoVaePath: getSetting('ltx25VideoVaePath') || '',
+      ltx25AudioVaePath: getSetting('ltx25AudioVaePath') || '',
+    } satisfies StreamPathSettings;
+    const paths = streamPaths(settingsSnapshot, stream);
+    if (!paths.modelPath || !paths.textEncoderPath) {
+      return NextResponse.json({ error: `Model paths for ${stream} are not configured in Settings` }, { status: 400 });
+    }
+    config.modelPath = paths.modelPath;
+    config.textEncoderPath = paths.textEncoderPath;
+    config.videoVaePath = paths.videoVaePath;
+    config.audioVaePath = paths.audioVaePath;
+
     const folder = db
       .select()
       .from(sourceFolders)
@@ -82,14 +106,14 @@ export async function POST(req: Request) {
 
       if (config.audioOnly) {
         // Audio-only preprocessing: flat output, no resolution/frame dimension.
-        config.outputFolderPath = path.join(folder.path, '_buckets', 'audio_only');
+        config.outputFolderPath = path.join(folder.path, '_buckets', stream, 'audio_only');
       } else {
         const resolution = config.resolution as number;
         const frameCounts = (config.frameCounts as number[]) || [];
 
         const frameCount = frameCounts[0];
         if (resolution && frameCount !== undefined) {
-          config.outputFolderPath = path.join(folder.path, '_buckets', `${resolution}_${frameCount}`);
+          config.outputFolderPath = path.join(folder.path, '_buckets', stream, `${resolution}_${frameCount}`);
         }
 
         if (resolution && frameCounts.length > 0) {

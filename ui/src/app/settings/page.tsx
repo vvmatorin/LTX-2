@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -15,19 +15,43 @@ const FIELDS: Array<{
   key: keyof AppSettings;
   label: string;
   placeholder: string;
-  group: 'paths' | 'dirs';
+  group: 'ltx-2.3' | 'ltx-2.5' | 'dirs';
 }> = [
   {
-    key: 'modelPath',
-    label: 'LTX Checkpoint Path',
+    key: 'ltx23ModelPath',
+    label: 'Checkpoint Path',
     placeholder: '/path/to/ltx-2.3-22b-dev.safetensors',
-    group: 'paths',
+    group: 'ltx-2.3',
   },
   {
-    key: 'textEncoderPath',
-    label: 'Text Encoder Path',
+    key: 'ltx23TextEncoderPath',
+    label: 'Text Encoder Path (Gemma 3 directory)',
     placeholder: '/path/to/google/gemma-3-12b-it',
-    group: 'paths',
+    group: 'ltx-2.3',
+  },
+  {
+    key: 'ltx25ModelPath',
+    label: 'Transformer Path',
+    placeholder: '/path/to/ltx-2.5-22b-dev-transformer-bf16.safetensors',
+    group: 'ltx-2.5',
+  },
+  {
+    key: 'ltx25TextEncoderPath',
+    label: 'Text Encoder Path (packed Gemma 4 safetensors)',
+    placeholder: '/path/to/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors',
+    group: 'ltx-2.5',
+  },
+  {
+    key: 'ltx25VideoVaePath',
+    label: 'Video VAE Path',
+    placeholder: '/path/to/ltx-2.5-video-vae-bf16.safetensors',
+    group: 'ltx-2.5',
+  },
+  {
+    key: 'ltx25AudioVaePath',
+    label: 'Audio VAE Path',
+    placeholder: '/path/to/ltx-2.5-audio-vae-bf16.safetensors',
+    group: 'ltx-2.5',
   },
   { key: 'outputDir', label: 'Training Output Directory', placeholder: '/path/to/training/outputs', group: 'dirs' },
   {
@@ -100,7 +124,8 @@ function SettingsForm({
     setLocal(prev => ({ ...prev, [key]: value }));
   };
 
-  const paths = FIELDS.filter(f => f.group === 'paths');
+  const ltx23 = FIELDS.filter(f => f.group === 'ltx-2.3');
+  const ltx25 = FIELDS.filter(f => f.group === 'ltx-2.5');
   const dirs = FIELDS.filter(f => f.group === 'dirs');
 
   return (
@@ -109,11 +134,21 @@ function SettingsForm({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Model Paths</CardTitle>
-          <CardDescription>Default model and text encoder paths used across all jobs</CardDescription>
+          <CardTitle className="text-lg">LTX-2.3</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {paths.map(f => (
+          {ltx23.map(f => (
+            <FieldRow key={f.key} field={f} value={local[f.key]} onChange={v => update(f.key, v)} />
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">LTX-2.5</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {ltx25.map(f => (
             <FieldRow key={f.key} field={f} value={local[f.key]} onChange={v => update(f.key, v)} />
           ))}
         </CardContent>
@@ -122,7 +157,6 @@ function SettingsForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Directories</CardTitle>
-          <CardDescription>Output and scripts paths</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {dirs.map(f => (

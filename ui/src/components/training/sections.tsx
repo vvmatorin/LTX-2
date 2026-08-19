@@ -133,6 +133,26 @@ export function ModelSection({ config, update }: SectionProps) {
             mono
           />
         </div>
+        {config.model.modelStream === 'ltx-2.5' && (
+          <>
+            <div className="sm:col-span-2">
+              <TextField
+                label="Video VAE Path"
+                value={config.model.videoVaePath}
+                onChange={v => update('model', { videoVaePath: v })}
+                mono
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <TextField
+                label="Audio VAE Path"
+                value={config.model.audioVaePath}
+                onChange={v => update('model', { audioVaePath: v })}
+                mono
+              />
+            </div>
+          </>
+        )}
         <div className="sm:col-span-2">
           <TextField
             label="Load Checkpoint (optional)"

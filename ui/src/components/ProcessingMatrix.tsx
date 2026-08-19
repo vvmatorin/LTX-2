@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { ProcessingJob } from '@/lib/types';
+import type { ModelStream, ProcessingJob } from '@/lib/types';
 import { RESOLUTION_OPTIONS, FRAME_COUNT_OPTIONS } from '@/lib/types';
 import { StatusBadge } from '@/components/StatusBadge';
 import { EmptyState } from '@/components/EmptyState';
@@ -9,9 +9,10 @@ import { EmptyState } from '@/components/EmptyState';
 interface Props {
   jobs: ProcessingJob[];
   folderId: number;
+  stream: ModelStream;
 }
 
-export function ProcessingMatrix({ jobs, folderId }: Props) {
+export function ProcessingMatrix({ jobs, folderId, stream }: Props) {
   // Jobs arrive newest-first (DESC). Keep the first occurrence per key so the
   // latest re-queued job is shown rather than the original failed one.
   const jobMap = useMemo(() => {
@@ -22,8 +23,9 @@ export function ProcessingMatrix({ jobs, folderId }: Props) {
         folderId?: number;
         resolution?: number;
         frameCounts?: number[];
+        modelStream?: string;
       };
-      if (cfg.folderId !== folderId) continue;
+      if (cfg.folderId !== folderId || cfg.modelStream !== stream) continue;
       const res = cfg.resolution;
       const frames = cfg.frameCounts;
       if (res && frames) {
@@ -34,7 +36,7 @@ export function ProcessingMatrix({ jobs, folderId }: Props) {
       }
     }
     return m;
-  }, [jobs, folderId]);
+  }, [jobs, folderId, stream]);
 
   const activeResolutions = useMemo(
     () => RESOLUTION_OPTIONS.filter(res => FRAME_COUNT_OPTIONS.some(f => jobMap.has(`${res}_${f}`))),

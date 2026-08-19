@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import type { DatasetBucket } from '@/lib/types';
+import type { DatasetBucket, ModelStream } from '@/lib/types';
+import { MODEL_STREAMS, MODEL_STREAM_LABELS, pickDefaultStream } from '@/lib/types';
 import { toErrorMessage } from '@/lib/utils';
 
 import { useFolders } from '@/hooks/useFolders';
@@ -17,6 +18,8 @@ import { PageHeader } from '@/components/PageHeader';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/components/EmptyState';
 import { FolderPlus } from 'lucide-react';
 
@@ -29,6 +32,7 @@ export default function DatasetsPage() {
   const fetchError = foldersError || jobsError || datasetsError;
 
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [selectedStream, setSelectedStream] = useState<ModelStream | null>(null);
   const [newFolderPath, setNewFolderPath] = useState('');
   const [folderError, setFolderError] = useState<string | null>(null);
   const [buildError, setBuildError] = useState<string | null>(null);
@@ -36,6 +40,7 @@ export default function DatasetsPage() {
   const [refreshingFolderId, setRefreshingFolderId] = useState<number | null>(null);
 
   const effectiveFolderId = selectedFolderId ?? folders[0]?.id ?? null;
+  const stream: ModelStream = selectedStream ?? (settings ? pickDefaultStream(settings) : 'ltx-2.5');
   const selectedFolder = folders.find(f => f.id === effectiveFolderId) ?? null;
   const completedJobs = useMemo(
     () => jobs.filter(j => j.type === 'preprocess' && j.status === 'completed' && j.outputExists !== false),
@@ -89,9 +94,10 @@ export default function DatasetsPage() {
     for (const c of configs) {
       await createJob({
         type: 'preprocess',
-        name: `Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/${c.resolution}_${c.frameCount}`,
+        name: `[${stream}] Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/${stream}/${c.resolution}_${c.frameCount}`,
         config: {
           folderId: effectiveFolderId,
+          modelStream: stream,
           resolution: c.resolution,
           frameCounts: [c.frameCount],
           folderPath: selectedFolder?.path,
@@ -109,9 +115,10 @@ export default function DatasetsPage() {
   const handleQueueAudioProcessing = async (config: AudioConfig) => {
     await createJob({
       type: 'preprocess',
-      name: `Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/audio_only`,
+      name: `[${stream}] Preprocess: ${selectedFolder?.path ?? '?'}/_buckets/${stream}/audio_only`,
       config: {
         folderId: effectiveFolderId,
+        modelStream: stream,
         folderPath: selectedFolder?.path,
         audioOnly: true,
         withAudio: true,
@@ -205,15 +212,33 @@ export default function DatasetsPage() {
         <TabsContent value="processing" className="space-y-4">
           {selectedFolder ? (
             <>
+              <div className="flex items-center gap-3">
+                <Label className="text-xs">Model</Label>
+                <Select value={stream} onValueChange={v => v && setSelectedStream(v as ModelStream)}>
+                  <SelectTrigger className="w-[140px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_STREAMS.map(ms => (
+                      <SelectItem key={ms} value={ms}>
+                        {MODEL_STREAM_LABELS[ms]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-muted-foreground text-[11px]">
+                  Latents and text embeddings are model-specific; each stream is processed separately.
+                </span>
+              </div>
               <FolderConfigPanel
                 folder={selectedFolder}
                 onQueueProcessing={handleQueueProcessing}
                 onQueueAudioProcessing={handleQueueAudioProcessing}
               />
               {selectedFolder.mediaType === 'audio' ? (
-                <AudioProcessingStatus jobs={jobs} folderId={selectedFolder.id} />
+                <AudioProcessingStatus jobs={jobs} folderId={selectedFolder.id} stream={stream} />
               ) : (
-                <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} />
+                <ProcessingMatrix jobs={jobs} folderId={selectedFolder.id} stream={stream} />
               )}
             </>
           ) : (
