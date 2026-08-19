@@ -88,6 +88,14 @@ const TARGET_MODULE_PRESETS = [
     modules: AUDIO_CORE_MODULES,
   },
   {
+    id: 'video_audio',
+    label: 'Video + Audio',
+    description:
+      'Both branches: self-attention, text cross-attention & feed-forward for video and audio — excludes only the ' +
+      'cross-modal bridges, so neither modality attends into the other.',
+    modules: [...VIDEO_CORE_MODULES, ...AUDIO_CORE_MODULES],
+  },
+  {
     id: 'video_bridge',
     label: 'Video + Bridge',
     description:
@@ -230,6 +238,14 @@ export function StrategySection({ config, update }: SectionProps) {
           onChange={v => update('trainingStrategy', { captionDropoutP: Math.min(1, Math.max(0, v)) })}
           step={0.05}
         />
+        {!isV2V && config.trainingStrategy.withAudio && (
+          <NumberField
+            label="Audio Loss Weight"
+            value={config.trainingStrategy.audioLossWeight ?? 0.1}
+            onChange={v => update('trainingStrategy', { audioLossWeight: Math.max(0, v) })}
+            step={0.05}
+          />
+        )}
       </div>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
         {!isV2V && (
@@ -490,7 +506,7 @@ export function CheckpointsSection({ config, update }: SectionProps) {
 export function FlowMatchingSection({ config, update }: SectionProps) {
   return (
     <Section title="Flow Matching">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <SelectField
           label="Timestep Sampling"
           value={config.flowMatching.timestepSamplingMode}
@@ -510,6 +526,14 @@ export function FlowMatchingSection({ config, update }: SectionProps) {
             { value: 'weighted', label: 'Weighted' },
           ]}
         />
+        {config.flowMatching.timestepLossWeighting !== 'none' && (
+          <NumberField
+            label="Loss Gamma"
+            value={config.flowMatching.timestepLossWeightingGamma ?? 1.0}
+            onChange={v => update('flowMatching', { timestepLossWeightingGamma: v })}
+            step={0.5}
+          />
+        )}
       </div>
     </Section>
   );

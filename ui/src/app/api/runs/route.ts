@@ -101,6 +101,7 @@ function buildTrainingStrategyYaml(uiConfig: TrainingConfig): Record<string, unk
     ...shared,
     with_audio: uiConfig.trainingStrategy.withAudio,
     audio_latents_dir: uiConfig.trainingStrategy.audioLatentsDir,
+    audio_loss_weight: uiConfig.trainingStrategy.audioLossWeight ?? 0.1,
   };
 }
 
@@ -188,6 +189,7 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       timestep_sampling_mode: uiConfig.flowMatching.timestepSamplingMode,
       timestep_sampling_params: {},
       timestep_loss_weighting: uiConfig.flowMatching.timestepLossWeighting,
+      timestep_loss_weighting_gamma: uiConfig.flowMatching.timestepLossWeightingGamma ?? 1.0,
     },
     tensorboard: {
       enabled: true,

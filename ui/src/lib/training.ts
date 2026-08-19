@@ -20,6 +20,7 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
       firstFrameConditioningP: 1.0,
       withAudio: true,
       audioLatentsDir: 'audio_latents',
+      audioLossWeight: 0.1,
       hFlip: true,
       temporalBoundaryLossWeight: 1.2,
       temporalBoundaryFrames: 3,
@@ -42,6 +43,7 @@ export function buildDefaultConfig(modelPath: string, textEncoderPath: string, o
     flowMatching: {
       timestepSamplingMode: 'uniform',
       timestepLossWeighting: 'weighted',
+      timestepLossWeightingGamma: 1.0,
     },
     validation: {
       prompts: [],

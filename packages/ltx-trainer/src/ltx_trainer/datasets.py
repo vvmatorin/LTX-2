@@ -12,6 +12,10 @@ from ltx_trainer import logger
 # Constants for precomputed data directories
 PRECOMPUTED_DIR_NAME = ".precomputed"
 
+# Sentinel field names marking whether an optional source is present in a sample.
+# See ``PrecomputedDataset._flag_key_for`` for their meaning.
+PRESENCE_FLAGS = ("has_audio", "has_video", "has_ref")
+
 
 class DummyDataset(Dataset):
     """Produce random latents and prompt embeddings. For minimal demonstration and benchmarking purposes"""
@@ -92,9 +96,19 @@ class PrecomputedDataset(Dataset):
         data_sources: dict[str, str] | list[str] | None = None,
         h_flip: bool = False,
         optional_sources: set[str] | None = None,
+        include_audio_only: bool = False,
     ) -> None:
         """
         Generic dataset for loading precomputed data from multiple sources.
+
+        Sources listed in ``optional_sources`` may be missing per-sample: the sample is
+        kept and ``__getitem__`` returns a presence sentinel dict for that source instead
+        of its data (see :meth:`_flag_key_for`).
+
+        When ``include_audio_only`` is True, the dataset additionally enumerates
+        **audio-only** samples: audio latents that have no matching video ``latents/``
+        file. These samples carry a ``{"has_video": False}`` sentinel for the video
+        source so the training strategy can skip the video branch loss for them.
 
         Args:
             data_root: Root directory containing preprocessed data
@@ -108,6 +122,8 @@ class PrecomputedDataset(Dataset):
             optional_sources: Output keys of sources whose files may be missing per-sample.
                 Affected samples are kept; ``__getitem__`` returns a sentinel dict
                 (``has_audio``/``has_ref`` = False) for the missing source instead.
+            include_audio_only: Whether to also include audio-only samples (audio latents
+                with no matching video latents). Used for mixed audio/video training.
         Example:
             # Standard mode (list)
             dataset = PrecomputedDataset("data/", ["latents", "conditions"])
@@ -119,6 +135,13 @@ class PrecomputedDataset(Dataset):
                 {"latents": "latents", "conditions": "conditions", "reference_latents": "ref_latents"},
                 optional_sources={"ref_latents"},
             )
+            # Audio-video mixed dataset — audio is optional, audio-only samples included
+            dataset = PrecomputedDataset(
+                "data/",
+                {"latents": "latents", "conditions": "conditions", "audio_latents": "audio_latents"},
+                optional_sources={"audio_latents"},
+                include_audio_only=True,
+            )
         Note:
             Latents are always returned in non-patchified format [C, F, H, W].
             Legacy patchified format [seq_len, C] is automatically converted.
@@ -128,6 +151,7 @@ class PrecomputedDataset(Dataset):
         self.data_root = self._setup_data_root(data_root)
         self.data_sources = self._normalize_data_sources(data_sources)
         self.optional_sources = set(optional_sources or ())
+        self.include_audio_only = include_audio_only
         self.source_paths = self._setup_source_paths()
         self.sample_files = self._discover_samples()
         self._validate_setup()
@@ -171,6 +195,29 @@ class PrecomputedDataset(Dataset):
         """Optional sources may have missing files without excluding the sample."""
         return output_key in self.optional_sources
 
+    def _has_presence_flag(self, dir_name: str, output_key: str) -> bool:
+        """Whether this source carries a presence sentinel in ``__getitem__``.
+
+        Optional sources always do. Video latents do as well when audio-only samples
+        are enumerated, since those samples have no video file.
+        """
+        if self._is_optional_source(output_key):
+            return True
+        return self.include_audio_only and dir_name == "latents"
+
+    def _flag_key_for(self, dir_name: str, output_key: str) -> str:
+        """Name of the presence sentinel used by a source.
+
+        ``has_audio`` for audio sources (absent in video-only samples), ``has_video`` for
+        video latents (absent in audio-only samples), ``has_ref`` for reference latents
+        (absent in unreferenced samples of a mixed IC-LoRA dataset).
+        """
+        if self._is_audio_source(output_key):
+            return "has_audio"
+        if dir_name == "latents":
+            return "has_video"
+        return "has_ref"
+
     def _setup_source_paths(self) -> dict[str, Path]:
         """Map data source names to their actual directory paths."""
         source_paths = {}
@@ -211,7 +258,78 @@ class PrecomputedDataset(Dataset):
             if self._all_required_source_files_exist(data_file, rel_path):
                 self._fill_sample_data_files(data_file, rel_path, sample_files)
 
+        # Second pass: enumerate audio-only samples (audio latents with no video latent).
+        if self.include_audio_only:
+            self._discover_audio_only_samples(sample_files)
+
         return sample_files
+
+    def _discover_audio_only_samples(self, sample_files: dict[str, list[Path | None]]) -> None:
+        """Append audio-only samples (audio latents lacking a matching video latent).
+
+        Audio-only samples receive a ``None`` entry for the video ``latents`` source
+        (surfaced as a ``has_video=False`` sentinel in ``__getitem__``) and real paths
+        for the audio and conditions sources. Mirrors the optional-audio handling but
+        in the opposite direction.
+        """
+        # Locate the audio source (directory whose output key contains "audio").
+        audio_entry = next(
+            ((d, k) for d, k in self.data_sources.items() if self._is_audio_source(k)),
+            None,
+        )
+        if audio_entry is None:
+            return
+        audio_dir, audio_key = audio_entry
+        audio_path = self.source_paths[audio_dir]
+        if not audio_path.exists():
+            return
+
+        # Output key for the video latents source (gets the has_video=False sentinel).
+        video_key = self.data_sources.get("latents")
+
+        # Audio relative paths already paired with a video latent during the first pass.
+        known_audio_rels = {p for p in sample_files[audio_key] if p is not None}
+
+        audio_only_count = 0
+        for audio_file in sorted(audio_path.glob("**/*.pt")):
+            rel_path = audio_file.relative_to(audio_path)
+            if rel_path in known_audio_rels:
+                continue
+
+            # Require all non-audio, non-video sources (e.g. conditions) to exist.
+            if not self._audio_only_required_sources_exist(rel_path):
+                continue
+
+            for dir_name, output_key in self.data_sources.items():
+                if output_key == audio_key:
+                    sample_files[output_key].append(rel_path)
+                elif video_key is not None and output_key == video_key:
+                    sample_files[output_key].append(None)  # has_video=False sentinel
+                else:
+                    expected_path = self.source_paths[dir_name] / rel_path
+                    sample_files[output_key].append(
+                        rel_path if expected_path.exists() else None
+                    )
+            audio_only_count += 1
+
+        if audio_only_count > 0:
+            logger.info(f"Discovered {audio_only_count} audio-only sample(s) (no matching video latents).")
+
+    def _audio_only_required_sources_exist(self, rel_path: Path) -> bool:
+        """Check that required non-audio, non-video sources exist for an audio-only sample."""
+        for dir_name, output_key in self.data_sources.items():
+            if self._is_audio_source(output_key) or self._is_optional_source(output_key):
+                continue
+            if dir_name == "latents":
+                # Video is intentionally absent for audio-only samples.
+                continue
+            expected_path = self.source_paths[dir_name] / rel_path
+            if not expected_path.exists():
+                logger.warning(
+                    f"Skipping audio-only sample '{rel_path}': missing required {dir_name} file at {expected_path}"
+                )
+                return False
+        return True
 
     def _all_required_source_files_exist(self, data_file: Path, rel_path: Path) -> bool:
         """Check that every required source has a matching file for this sample."""
@@ -300,10 +418,9 @@ class PrecomputedDataset(Dataset):
         for dir_name, output_key in self.data_sources.items():
             file_rel_path = self.sample_files[output_key][index]
 
-            # Optional source file missing for this sample — return sentinel
+            # File missing for this sample — return the source's presence sentinel.
             if file_rel_path is None:
-                flag_key = "has_audio" if self._is_audio_source(output_key) else "has_ref"
-                result[output_key] = {flag_key: torch.tensor(False)}
+                result[output_key] = {self._flag_key_for(dir_name, output_key): torch.tensor(False)}
                 continue
 
             source_path = self.source_paths[dir_name]
@@ -321,9 +438,8 @@ class PrecomputedDataset(Dataset):
                 if "latent" in dir_name.lower() and not self._is_audio_source(output_key):
                     data = self._normalize_video_latents(data)
 
-                if self._is_optional_source(output_key):
-                    flag_key = "has_audio" if self._is_audio_source(output_key) else "has_ref"
-                    data[flag_key] = torch.tensor(True)
+                if self._has_presence_flag(dir_name, output_key):
+                    data[self._flag_key_for(dir_name, output_key)] = torch.tensor(True)
 
                 result[output_key] = data
             except Exception as e:
@@ -332,6 +448,12 @@ class PrecomputedDataset(Dataset):
             # Track the latents filename for logging in the trainer
             if dir_name == "latents":
                 result["_sample_path"] = str(file_rel_path)
+
+        # Fallback sample path for audio-only samples (no video latent present).
+        if "_sample_path" not in result:
+            audio_key = next((k for k in self.data_sources.values() if self._is_audio_source(k)), None)
+            audio_rel = self.sample_files[audio_key][index] if audio_key else None
+            result["_sample_path"] = str(audio_rel) if audio_rel is not None else f"audio_only_{index}"
 
         # Add index for debugging
         result["idx"] = index
@@ -368,22 +490,23 @@ class PrecomputedDataset(Dataset):
         return data
 
 
-def _collate_audio_source(samples: list[dict[str, Any]]) -> dict[str, Any]:
-    """Collate a list of per-sample audio dicts.
+def _collate_optional_modality_source(samples: list[dict[str, Any]], flag_key: str) -> dict[str, Any]:
+    """Collate a list of per-sample modality dicts where the modality may be absent.
 
-    Samples with audio contain ``{"has_audio": True, "latents": Tensor, ...}``.
-    Samples without audio contain only ``{"has_audio": False}``.
+    ``flag_key`` is ``"has_audio"`` or ``"has_video"``. Present samples contain
+    ``{flag_key: True, "latents": Tensor, ...}``; absent samples contain only
+    ``{flag_key: False}``.
 
-    When at least one sample has audio, absent-audio rows are zero-padded to the
-    maximum latent shape found among present samples so the batch can be stacked.
+    When at least one sample is present, absent rows are zero-padded to the maximum
+    latent shape found among present samples so the batch can be stacked.
     """
-    has_audio_flags = [s["has_audio"].item() for s in samples]
-    has_audio = torch.tensor(has_audio_flags, dtype=torch.bool)
+    flags = [bool(s[flag_key].item()) for s in samples]
+    flag_tensor = torch.tensor(flags, dtype=torch.bool)
 
-    present = [s for s in samples if s["has_audio"].item()]
+    present = [s for s in samples if bool(s[flag_key].item())]
 
     if not present:
-        return {"has_audio": has_audio}
+        return {flag_key: flag_tensor}
 
     # Use first present sample as shape/type reference
     ref = present[0]["latents"]
@@ -405,20 +528,20 @@ def _collate_audio_source(samples: list[dict[str, Any]]) -> dict[str, Any]:
 
     latents_list = []
     for sample in samples:
-        if sample["has_audio"].item():
+        if bool(sample[flag_key].item()):
             latents_list.append(_pad_to(sample["latents"], max_shape))
         else:
             latents_list.append(torch.zeros(max_shape, dtype=ref.dtype))
 
     result: dict[str, Any] = {
-        "has_audio": has_audio,
+        flag_key: flag_tensor,
         "latents": torch.stack(latents_list),
     }
 
     # Collate scalar metadata from present samples (use first present sample's values for absent ones)
     ref_sample = present[0]
     for key in ref_sample:
-        if key in ("has_audio", "latents"):
+        if key in (flag_key, "latents"):
             continue
         values = [s.get(key, ref_sample[key]) for s in samples]
         try:
@@ -452,32 +575,48 @@ def _collate_ref_source(samples: list[dict[str, Any]]) -> dict[str, Any]:
     return default_collate(samples)
 
 
+def _detect_flag_key(batch: list[dict[str, Any]], key: str) -> str | None:
+    """Find the presence sentinel used by ``key``, or None if the source is not optional.
+
+    A source can be a sentinel in some samples and present in others, so all samples are
+    scanned rather than relying on the first one only.
+    """
+    for sample in batch:
+        value = sample[key]
+        if not isinstance(value, dict):
+            continue
+        for flag_key in PRESENCE_FLAGS:
+            if flag_key in value:
+                return flag_key
+    return None
+
+
 def collate_with_optional_sources(batch: list[dict[str, Any]]) -> dict[str, Any]:
     """Custom collate that handles optional sources whose files may be missing.
 
-    Keys whose batch values are dicts containing a ``has_audio`` field are
-    collated with :func:`_collate_audio_source`; dicts containing a ``has_ref``
-    field with :func:`_collate_ref_source`. All other keys use the standard
-    PyTorch collation.
+    Keys whose batch values are dicts containing a ``has_audio`` or ``has_video`` field
+    are collated with :func:`_collate_optional_modality_source` (absent rows zero-padded);
+    dicts containing a ``has_ref`` field with :func:`_collate_ref_source` (batch must be
+    homogeneous). All other keys use the standard PyTorch collation.
     """
     all_keys = batch[0].keys()
     result: dict[str, Any] = {}
 
-    audio_keys: set[str] = set()
+    modality_keys: dict[str, str] = {}  # key -> flag_key
     ref_keys: set[str] = set()
     regular_keys: set[str] = set()
 
     for key in all_keys:
-        sample_val = batch[0][key]
-        if isinstance(sample_val, dict) and "has_audio" in sample_val:
-            audio_keys.add(key)
-        elif isinstance(sample_val, dict) and "has_ref" in sample_val:
+        flag_key = _detect_flag_key(batch, key)
+        if flag_key == "has_ref":
             ref_keys.add(key)
+        elif flag_key is not None:
+            modality_keys[key] = flag_key
         else:
             regular_keys.add(key)
 
-    for key in audio_keys:
-        result[key] = _collate_audio_source([s[key] for s in batch])
+    for key, flag_key in modality_keys.items():
+        result[key] = _collate_optional_modality_source([s[key] for s in batch], flag_key)
 
     for key in ref_keys:
         result[key] = _collate_ref_source([s[key] for s in batch])

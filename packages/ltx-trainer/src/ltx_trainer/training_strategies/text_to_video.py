@@ -84,6 +84,17 @@ class TextToVideoConfig(TrainingStrategyConfigBase):
         le=1.0,
     )
 
+    audio_loss_weight: float = Field(
+        default=0.1,
+        description=(
+            "Multiplier on the audio loss term when it is combined with the video loss "
+            "(total = video_loss + audio_loss_weight * audio_loss). Both terms are already "
+            "normalized per active token, so this purely balances how much the audio branch "
+            "contributes to the gradient. Only used when with_audio is True."
+        ),
+        ge=0.0,
+    )
+
 
 class TextToVideoStrategy(TrainingStrategy):
     """Text-to-video training strategy.
@@ -134,6 +145,13 @@ class TextToVideoStrategy(TrainingStrategy):
         """Prepare inputs for text-to-video training."""
         # Get pre-encoded latents - dataset provides uniform non-patchified format [B, C, F, H, W]
         latents = batch["latents"]
+
+        # Audio-only batch: no video latents present (has_video=False for all samples).
+        # The video branch is fed a neutral single-token dummy (no loss); only audio is trained.
+        has_video_flag = latents.get("has_video")
+        if has_video_flag is not None and not bool(has_video_flag.any()):
+            return self._prepare_audio_only_inputs(batch, timestep_sampler)
+
         video_latents = latents["latents"]
 
         # Get video (latent) dimensions directly from the tensor shape [B, C, F, H, W].
@@ -226,6 +244,13 @@ class TextToVideoStrategy(TrainingStrategy):
             extra = (self.config.temporal_boundary_loss_weight - 1.0) * cond_active * boundary_region
             video_loss_mask *= 1.0 + extra
 
+        # Guard mixed batches (batch_size > 1) that contain audio-only samples: their
+        # zero-padded video latents must not contribute to the video loss.
+        if has_video_flag is not None:
+            has_video = has_video_flag.to(device=device)
+            if not bool(has_video.all()):
+                video_loss_mask = video_loss_mask * has_video.view(-1, 1).float()
+
         # Handle audio if enabled
         audio_modality = None
         audio_targets = None
@@ -251,6 +276,52 @@ class TextToVideoStrategy(TrainingStrategy):
             audio_loss_mask=audio_loss_mask,
         )
 
+    def _prepare_audio_only_inputs(
+        self,
+        batch: dict[str, Any],
+        timestep_sampler: TimestepSampler,
+    ) -> ModelInputs:
+        """Prepare inputs for an audio-only batch (no video latents).
+
+        The video stream is dropped entirely (``video=None``), so the transformer skips the
+        video tower and both cross-modal directions, so only the audio branch runs and trains.
+        """
+        conditions = batch["conditions"]
+        audio_prompt_embeds = conditions["audio_prompt_embeds"]
+        prompt_attention_mask = conditions["prompt_attention_mask"]
+
+        audio_latents_raw = batch["audio_latents"]["latents"]
+        device = audio_latents_raw.device
+        dtype = audio_latents_raw.dtype
+        batch_size = audio_latents_raw.shape[0]
+
+        # Sample sigmas based on the audio sequence length (drives the timestep distribution).
+        audio_latents_patched = self._audio_patchifier.patchify(audio_latents_raw.to(device=device, dtype=dtype))
+        sigmas = timestep_sampler.sample_for(audio_latents_patched)
+
+        audio_modality, audio_targets, audio_loss_mask = self._prepare_audio_inputs(
+            batch=batch,
+            sigmas=sigmas,
+            audio_prompt_embeds=audio_prompt_embeds,
+            prompt_attention_mask=prompt_attention_mask,
+            batch_size=batch_size,
+            device=device,
+            dtype=dtype,
+        )
+        if audio_modality is None:
+            raise ValueError(
+                "Batch carries neither video nor audio latents; the transformer needs at least one modality."
+            )
+
+        return ModelInputs(
+            video=None,
+            audio=audio_modality,
+            video_targets=None,
+            audio_targets=audio_targets,
+            video_loss_mask=None,
+            audio_loss_mask=audio_loss_mask,
+        )
+
     def _prepare_audio_inputs(
         self,
         batch: dict[str, Any],
@@ -260,7 +331,7 @@ class TextToVideoStrategy(TrainingStrategy):
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
-    ) -> tuple[Modality, Tensor, Tensor]:
+    ) -> tuple[Modality, Tensor, Tensor] | tuple[None, None, None]:
         """Prepare audio inputs for joint audio-video training.
         Args:
             batch: Raw batch data containing audio_latents
@@ -271,19 +342,19 @@ class TextToVideoStrategy(TrainingStrategy):
             device: Target device
             dtype: Target dtype
         Returns:
-            Tuple of (audio_modality, audio_targets, audio_loss_mask)
+            Tuple of (audio_modality, audio_targets, audio_loss_mask), or (None, None, None)
+            when no sample in the batch carries audio.
         """
         audio_data = batch["audio_latents"]
         has_audio = audio_data.get("has_audio", torch.ones(batch_size, dtype=torch.bool))
         has_audio = has_audio.to(device)
 
-        if has_audio.any():
-            audio_latents = audio_data["latents"].to(device=device, dtype=dtype)
-            audio_latents = self._audio_patchifier.patchify(audio_latents)
-            audio_seq_len = audio_latents.shape[1]
-        else:
-            audio_seq_len = 1
-            audio_latents = torch.zeros(batch_size, audio_seq_len, 128, device=device, dtype=dtype)
+        if not bool(has_audio.any()):
+            return None, None, None
+
+        audio_latents = audio_data["latents"].to(device=device, dtype=dtype)
+        audio_latents = self._audio_patchifier.patchify(audio_latents)
+        audio_seq_len = audio_latents.shape[1]
 
         # Sample audio noise
         audio_noise = torch.randn_like(audio_latents)
@@ -320,27 +391,43 @@ class TextToVideoStrategy(TrainingStrategy):
         # Audio loss mask: True = compute loss. False for video-only samples.
         audio_loss_mask = has_audio.unsqueeze(1).expand(-1, audio_seq_len)
 
+        # Batches that mix audio lengths are zero-padded up to the longest sample by the
+        # collate function; those padded frames carry no signal and must not train.
+        num_time_steps = audio_data.get("num_time_steps")
+        if num_time_steps is not None and torch.is_tensor(num_time_steps) and num_time_steps.numel() == batch_size:
+            frame_indices = torch.arange(audio_seq_len, device=device).unsqueeze(0)
+            within_length = frame_indices < num_time_steps.to(device).view(-1, 1)
+            audio_loss_mask = audio_loss_mask & within_length
+
         return audio_modality, audio_targets, audio_loss_mask
 
     def compute_loss(
         self,
-        video_pred: Tensor,
+        video_pred: Tensor | None,
         audio_pred: Tensor | None,
         inputs: ModelInputs,
     ) -> Tensor:
-        """Compute masked MSE loss for video and optionally audio."""
-        # Video loss: normalize per-sample over (seq, channels) → [B,]
-        video_loss = (video_pred - inputs.video_targets).pow(2)
-        video_loss_mask = inputs.video_loss_mask.unsqueeze(-1).float()
-        video_loss = video_loss.mul(video_loss_mask).mean(dim=[-2, -1])
-        video_loss = video_loss.div(video_loss_mask.mean(dim=[-2, -1]).clamp(min=1e-8))
+        """Compute masked MSE loss for video and optionally audio.
 
-        # Apply per-sample sigma loss weights (e.g. bell weighting) if configured
-        if inputs.sigma_loss_weights is not None:
-            video_loss = video_loss * inputs.sigma_loss_weights
+        Either branch may be absent: audio-only batches carry no video stream, and batches
+        with no audio carry no audio stream. At least one is always present.
+        """
+        video_loss = None
+        if video_pred is not None and inputs.video_targets is not None:
+            # Video loss: normalize per-sample over (seq, channels) → [B,]
+            video_loss = (video_pred - inputs.video_targets).pow(2)
+            video_loss_mask = inputs.video_loss_mask.unsqueeze(-1).float()
+            video_loss = video_loss.mul(video_loss_mask).mean(dim=[-2, -1])
+            video_loss = video_loss.div(video_loss_mask.mean(dim=[-2, -1]).clamp(min=1e-8))
+
+            # Apply per-sample sigma loss weights (e.g. bell weighting) if configured
+            if inputs.sigma_loss_weights is not None:
+                video_loss = video_loss * inputs.sigma_loss_weights
 
         # If no audio, return per-sample video loss [B,]
         if not self.config.with_audio or audio_pred is None or inputs.audio_targets is None:
+            if video_loss is None:
+                raise ValueError("compute_loss received neither a video nor an audio prediction")
             return video_loss
 
         # Audio loss per-sample [B,], zeroed for video-only samples.
@@ -355,4 +442,7 @@ class TextToVideoStrategy(TrainingStrategy):
             audio_loss * 0.0,
         )
 
-        return video_loss + 0.1 * audio_loss
+        if video_loss is None:
+            return audio_loss
+
+        return video_loss + audio_loss * self.config.audio_loss_weight

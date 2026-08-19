@@ -108,6 +108,9 @@ class WeightNoiseConfig(ConfigBaseModel):
 
     Biases training toward flat loss minima, spreads learning across the LoRA rank budget,
     and resists memorization on small datasets.
+
+    The perturbation is persistent, but every saved checkpoint holds pre-noise weights.
+    Only params that received a non-zero gradient in the step are perturbed.
     """
 
     mode: Literal["none", "relative", "absolute"] = Field(
@@ -122,6 +125,12 @@ class WeightNoiseConfig(ConfigBaseModel):
         description="Noise scale. In relative mode, multiplied by each tensor's weight RMS. "
         "Typical useful range: 0.01–0.017. Only used when mode is not 'none'.",
         gt=0.0,
+    )
+
+    preserve_norm: bool = Field(
+        default=True,
+        description="Rescale each perturbed tensor back to its pre-noise norm, so the noise "
+        "rotates the weights without inflating their magnitude over a long run.",
     )
 
 
@@ -139,7 +148,7 @@ class OptimizationConfig(ConfigBaseModel):
     )
 
     batch_size: int = Field(
-        default=2,
+        default=1,
         description="Batch size for training",
     )
 
@@ -518,6 +527,18 @@ class FlowMatchingConfig(ConfigBaseModel):
         "'none': all timesteps weighted equally (default). "
         "'bell': bell-shaped weights peaking at sigma≈0.5 (analytic Gaussian curve). "
         "'weighted': empirical 1000-bin lookup table from ai-toolkit's default_weighing_scheme.",
+    )
+
+    timestep_loss_weighting_gamma: float = Field(
+        default=1.0,
+        description="Temperature on the selected weighting curve: the weights are raised to this "
+        "power and renormalized back to mean 1, so the overall gradient scale (and hence the "
+        "effective learning rate) is unchanged. 1.0 leaves the curve as-is. Values > 1 sharpen it "
+        "around its peak and suppress its tails; values < 1 flatten it toward uniform, and 0.0 is "
+        "equivalent to 'none'. For 'weighted' (peak at sigma≈0.88) raising gamma concentrates the "
+        "budget in sigma≈0.7-0.9 and cuts the low-sigma share without inflating the near-pure-noise "
+        "sigma>0.95 region. No effect when timestep_loss_weighting is 'none'.",
+        ge=0.0,
     )
 
 

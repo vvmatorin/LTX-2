@@ -97,6 +97,7 @@ class LtxvTrainer:
         self._global_step = -1
         self._checkpoint_paths: list[Path] = []
         self._training_state_paths: list[Path] = []
+        self._last_saved_step: int | None = None
         self._training_state_size_warned = False
         self._sigma_tracker = SigmaBucketTracker()
         self._tb_writer: SummaryWriter | None = None
@@ -225,6 +226,11 @@ class LtxvTrainer:
                                     )
 
                     self._optimizer.step()
+
+                    noise_params = []
+                    if is_optimization_step and self._weight_noise_active():
+                        noise_params = self._params_with_grad()
+
                     self._optimizer.zero_grad()
 
                     if self._lr_scheduler is not None:
@@ -255,8 +261,8 @@ class LtxvTrainer:
                     ):
                         self._save_checkpoint()
 
-                    if is_optimization_step:
-                        self._apply_weight_noise()
+                    if noise_params:
+                        self._apply_weight_noise(noise_params)
 
                     self._accelerator.wait_for_everyone()
 
@@ -448,7 +454,7 @@ class LtxvTrainer:
         conditions["prompt_attention_mask"] = None
 
         model_inputs = self._training_strategy.prepare_training_inputs(batch, self._timestep_sampler)
-        model_inputs.sigma_loss_weights = self._get_sigma_loss_weights(model_inputs.video.sigma)
+        model_inputs.sigma_loss_weights = self._get_sigma_loss_weights(model_inputs.sigma)
 
         video_pred, audio_pred = self._transformer(
             video=model_inputs.video,
@@ -458,7 +464,7 @@ class LtxvTrainer:
 
         loss = self._training_strategy.compute_loss(video_pred, audio_pred, model_inputs)
 
-        return loss, model_inputs.video.sigma.detach()
+        return loss, model_inputs.sigma.detach()
 
     @free_gpu_memory_context(after=True)
     def _load_text_encoder_and_cache_embeddings(self) -> list[CachedPromptEmbeddings] | None:
@@ -623,7 +629,26 @@ class LtxvTrainer:
             self._sigma_loss_weights = None
 
         if self._sigma_loss_weights is not None:
+            gamma = self._config.flow_matching.timestep_loss_weighting_gamma
+            self._sigma_loss_weights = self._apply_weighting_gamma(self._sigma_loss_weights, gamma)
             self._sigma_loss_weights = self._sigma_loss_weights.to(self._accelerator.device)
+            if gamma != 1.0:
+                logger.info(
+                    "Timestep loss weighting '%s' sharpened with gamma=%.2f (range %.3f-%.3f, mean 1.0)",
+                    weighting,
+                    gamma,
+                    self._sigma_loss_weights.min().item(),
+                    self._sigma_loss_weights.max().item(),
+                )
+
+    @staticmethod
+    def _apply_weighting_gamma(weights: torch.Tensor, gamma: float) -> torch.Tensor:
+        """Raise the weighting curve to ``gamma`` and renormalize it back to mean 1."""
+        if gamma == 1.0:
+            return weights
+        # The 'bell' curve touches exactly 0, and 0**0 is 1 in IEEE — clamp so gamma=0 really is uniform.
+        sharpened = weights.clamp(min=1e-12).pow(gamma)
+        return sharpened / sharpened.mean()
 
     @staticmethod
     def _precompute_bell_weights(n: int = 1000) -> torch.Tensor:
@@ -916,6 +941,8 @@ class LtxvTrainer:
     def _init_dataloader(self) -> None:
         """Initialize the training data loader using the strategy's data sources."""
         optional_sources = self._training_strategy.get_optional_data_sources()
+        # Audio training also admits samples that have audio but no video at all.
+        include_audio_only = self._training_strategy.requires_audio
 
         if self._dataset is None:
             # Get data sources from the training strategy
@@ -928,6 +955,7 @@ class LtxvTrainer:
                 data_sources=data_sources,
                 h_flip=h_flip,
                 optional_sources=optional_sources,
+                include_audio_only=include_audio_only,
             )
 
             logger.debug(f"Loaded dataset with {len(self._dataset):,} samples from sources: {list(data_sources)}")
@@ -941,7 +969,7 @@ class LtxvTrainer:
             num_workers=num_workers,
             pin_memory=num_workers > 0,
             persistent_workers=num_workers > 0,
-            collate_fn=collate_with_optional_sources if optional_sources else None,
+            collate_fn=collate_with_optional_sources if (optional_sources or include_audio_only) else None,
         )
 
         self._dataloader = self._accelerator.prepare(dataloader)
@@ -1227,6 +1255,11 @@ class LtxvTrainer:
         filename = f"{prefix}_weights_step_{self._global_step:05d}.safetensors"
         saved_weights_path = save_dir / filename
 
+        if self._last_saved_step == self._global_step:
+            return saved_weights_path
+
+        self._last_saved_step = self._global_step
+
         # Get state dict (collective operation - all processes must participate)
         self._accelerator.wait_for_everyone()
         full_state_dict = self._accelerator.get_state_dict(self._transformer)
@@ -1418,17 +1451,44 @@ class LtxvTrainer:
             self._tb_writer.flush()
 
     @torch.no_grad()
-    def _apply_weight_noise(self) -> None:
+    def _params_with_grad(self) -> list[Tensor]:
+        """Trainable params that received a non-zero gradient in the current accumulation window.
+
+        Must be called before the optimizer's zero_grad().
+        """
+        candidates = [p for p in self._trainable_params if p.grad is not None]
+        if not candidates:
+            return []
+
+        is_active = torch.stack([p.grad.any() for p in candidates]).tolist()
+        return [p for p, active in zip(candidates, is_active, strict=True) if active]
+
+    def _weight_noise_active(self) -> bool:
+        """Whether the just-finished optimization step should be perturbed."""
+        cfg = self._config.optimization
+        if cfg.weight_noise.mode == "none":
+            return False
+
+        return self._global_step < cfg.steps
+
+    @torch.no_grad()
+    def _apply_weight_noise(self, params: list[Tensor]) -> None:
         """Inject Gaussian noise into trainable weight values for flat-minima regularization."""
         wn_cfg = self._config.optimization.weight_noise
         if wn_cfg.mode == "none":
             return
 
         sigma = wn_cfg.sigma
-        for p in self._trainable_params:
+        for p in params:
+            work = p.detach().to(dtype=torch.float32, copy=True)
+            norm_before = work.norm()
+
+            sigma_p = sigma
             if wn_cfg.mode == "relative":
-                rms = p.data.norm() / (p.data.numel() ** 0.5)
-                sigma_p = sigma * rms
-            else:
-                sigma_p = sigma
-            p.data.add_(torch.randn_like(p.data) * sigma_p)
+                sigma_p = sigma * norm_before / work.numel() ** 0.5
+            work.add_(torch.randn_like(work) * sigma_p)
+
+            if wn_cfg.preserve_norm:
+                work.mul_(norm_before / work.norm().clamp_min(1e-12))
+
+            p.copy_(work)

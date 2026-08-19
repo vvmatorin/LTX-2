@@ -2,7 +2,7 @@ export interface SourceFolder {
   id: number;
   path: string;
   name: string;
-  mediaType: 'images' | 'videos' | 'mixed';
+  mediaType: 'images' | 'videos' | 'mixed' | 'audio';
   fileCount: number;
   createdAt: string;
 }
@@ -45,6 +45,7 @@ export interface DatasetBucket {
   bucketKeys: string[];
   hasAudio: boolean;
   hasHFlip: boolean;
+  isAudioOnly?: boolean;
 }
 
 export interface TrainingConfig {
@@ -67,6 +68,7 @@ export interface TrainingConfig {
     // text_to_video only
     withAudio: boolean;
     audioLatentsDir: string;
+    audioLossWeight?: number;
     hFlip: boolean;
     // shared
     temporalBoundaryLossWeight: number;
@@ -94,6 +96,7 @@ export interface TrainingConfig {
   flowMatching: {
     timestepSamplingMode: 'uniform' | 'shifted_logit_normal';
     timestepLossWeighting: 'none' | 'bell' | 'weighted';
+    timestepLossWeightingGamma?: number;
   };
   data?: {
     preprocessedDataRoot?: string;
