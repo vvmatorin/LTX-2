@@ -82,7 +82,7 @@ class GenerationConfig:
     height: int = 544  # Output video height in pixels
     width: int = 960  # Output video width in pixels
     num_frames: int = 97  # Number of frames to generate
-    frame_rate: float = 25.0  # Frame rate for temporal position scaling
+    frame_rate: float = 24.0  # Frame rate for temporal position scaling
     num_inference_steps: int = 30  # Number of denoising steps
     guidance_scale: float = 4.0  # CFG guidance scale
     seed: int = 42  # Random seed for reproducibility

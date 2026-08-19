@@ -23,8 +23,6 @@ from ltx_trainer.timestep_samplers import TimestepSampler
 # Default frames per second for video missing in the FPS metadata
 DEFAULT_FPS = 24
 
-# VAE scale factors for LTX-2
-
 
 class TrainingStrategyConfigBase(BaseModel):
     """Base configuration class for training strategies.

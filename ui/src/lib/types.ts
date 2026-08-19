@@ -167,7 +167,6 @@ export interface TrainingConfig {
     seed: number;
     inferenceSteps: number;
     interval: number;
-    videosPerPrompt: number;
     guidanceScale: number;
     generateAudio: boolean;
     skipInitialValidation: boolean;

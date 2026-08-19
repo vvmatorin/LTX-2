@@ -172,7 +172,6 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       seed: uiConfig.validation.seed,
       inference_steps: uiConfig.validation.inferenceSteps,
       interval: uiConfig.validation.interval,
-      videos_per_prompt: uiConfig.validation.videosPerPrompt,
       guidance_scale: uiConfig.validation.guidanceScale,
       stg_scale: 0.0,
       stg_blocks: null,

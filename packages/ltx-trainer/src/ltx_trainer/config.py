@@ -323,7 +323,7 @@ class ValidationConfig(ConfigBaseModel):
         return v
 
     frame_rate: float = Field(
-        default=25.0,
+        default=24.0,
         description="Frame rate for validation videos",
         gt=0,
     )
@@ -342,12 +342,6 @@ class ValidationConfig(ConfigBaseModel):
     interval: int | None = Field(
         default=100,
         description="Number of steps between validation runs. If None, validation is disabled.",
-        gt=0,
-    )
-
-    videos_per_prompt: int = Field(
-        default=1,
-        description="Number of videos to generate per validation prompt",
         gt=0,
     )
 
