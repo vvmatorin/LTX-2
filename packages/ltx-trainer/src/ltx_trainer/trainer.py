@@ -1524,14 +1524,21 @@ class LtxvTrainer:
         for param in params:
             param.grad = None
 
-        loss, metrics = self._dpo_training_step(pair)
-        metrics["dpo/loss"] = loss.detach().item()
+        # Dropout is disabled across BOTH the forward and the backward: with LoRA dropout
+        # active, all four velocity MSEs of the margin would carry independent dropout
+        # noise, which beta amplifies inside the sigmoid. Not transformer.eval() — that
+        # would also turn off gradient checkpointing — and the span must cover backward
+        # because non-reentrant checkpointing recomputes the forward there and requires
+        # the identical graph (re-enabled dropout raises CheckpointError).
+        with dpo.dropout_disabled(self._transformer):
+            loss, metrics = self._dpo_training_step(pair)
 
-        # Accelerate divides backward losses by gradient_accumulation_steps; undo it —
-        # the DPO loss is applied once per optimization step, not per micro-batch.
-        # A non-finite loss backwards as-is (see the SFT loop): the all-reduced
-        # gradients are identical on every rank, so the check below is too.
-        self._accelerator.backward(loss * cfg.optimization.gradient_accumulation_steps)
+            # Accelerate divides backward losses by gradient_accumulation_steps; undo it —
+            # the DPO loss is applied once per optimization step, not per micro-batch.
+            # A non-finite loss backwards as-is (see the SFT loop): the all-reduced
+            # gradients are identical on every rank, so the check below is too.
+            self._accelerator.backward(loss * cfg.optimization.gradient_accumulation_steps)
+        metrics["dpo/loss"] = loss.detach().item()
 
         dpo_grads = [p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p) for p in params]
 
@@ -1575,19 +1582,16 @@ class LtxvTrainer:
                 audio_mse = dpo.masked_per_sample_mse(audio_pred, inputs.audio_targets, inputs.audio_loss_mask)
             return video_mse, audio_mse
 
-        # Both forwards run with dropout disabled: with LoRA dropout active, all four
-        # velocity MSEs of the margin would carry independent dropout noise, which beta
-        # amplifies inside the sigmoid. Reference DPO implementations disable dropout.
-        # Not transformer.eval() — that would also turn off gradient checkpointing.
-        with dpo.dropout_disabled(self._transformer):
-            video_pred, audio_pred = self._transformer(video=inputs.video, audio=inputs.audio, perturbations=None)
-            policy_mse, policy_audio_mse = compute_mses(video_pred, audio_pred)
+        # Dropout is disabled by the caller for the whole forward+backward span
+        # (see _blend_dpo_gradient).
+        video_pred, audio_pred = self._transformer(video=inputs.video, audio=inputs.audio, perturbations=None)
+        policy_mse, policy_audio_mse = compute_mses(video_pred, audio_pred)
 
-            with torch.no_grad(), self._dpo.reference_swapped(self._named_trainable_params()):
-                ref_video_pred, ref_audio_pred = self._transformer(
-                    video=inputs.video, audio=inputs.audio, perturbations=None
-                )
-                ref_mse, ref_audio_mse = compute_mses(ref_video_pred, ref_audio_pred)
+        with torch.no_grad(), self._dpo.reference_swapped(self._named_trainable_params()):
+            ref_video_pred, ref_audio_pred = self._transformer(
+                video=inputs.video, audio=inputs.audio, perturbations=None
+            )
+            ref_mse, ref_audio_mse = compute_mses(ref_video_pred, ref_audio_pred)
 
         return dpo.flow_dpo_loss(
             policy_mse,

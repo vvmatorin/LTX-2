@@ -142,6 +142,10 @@ def dropout_disabled(module: torch.nn.Module) -> Iterator[None]:
     Deliberately not ``module.eval()``: the model must stay in training mode so
     gradient checkpointing — gated on ``self.training`` — remains active, or the
     un-checkpointed DPO forward blows up activation memory.
+
+    The context must span the forward AND its backward: non-reentrant checkpointing
+    recomputes the forward during backward and requires an identical graph, so
+    re-enabling dropout in between raises a CheckpointError.
     """
     dropouts = [m for m in module.modules() if isinstance(m, torch.nn.Dropout) and m.training]
     try:
