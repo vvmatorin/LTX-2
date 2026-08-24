@@ -12,8 +12,7 @@ export function useDpoRounds(job: ProcessingJob | null) {
   const queryClient = useQueryClient();
 
   const jobId = job?.id ?? null;
-  const dpoEnabled =
-    !!job && job.type === 'training' && !!(job.config as { dpo?: { enabled?: boolean } }).dpo?.enabled;
+  const dpoEnabled = !!job && job.type === 'training' && !!(job.config as { dpo?: { enabled?: boolean } }).dpo?.enabled;
 
   const query = useQuery<{ rounds: DpoRound[] }>({
     queryKey: ['dpo', jobId],

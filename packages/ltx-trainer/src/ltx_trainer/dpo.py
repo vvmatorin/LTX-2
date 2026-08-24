@@ -13,8 +13,10 @@ videos, their final denoised latents, and two JSON files:
 
 import json
 import time
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 import torch
 from torch import Tensor
@@ -26,10 +28,9 @@ from ltx_core.types import AudioLatentShape, SpatioTemporalScaleFactors, VideoLa
 from ltx_trainer import logger
 from ltx_trainer.validation_runner import PromptEmbeddings
 
-IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp")
-
 PENDING_FILENAME = "pending.json"
 LABELS_FILENAME = "labels.json"
+REFERENCE_FILENAME = "dpo_reference.pt"
 NEGATIVE_EMBEDDINGS_STEM = "_negative"
 
 
@@ -71,23 +72,155 @@ class DpoPairInputs:
     audio_loss_mask: Tensor | None = None  # [2, T]
 
 
-def discover_entries(samples_dir: str | Path) -> list[DpoEntry]:
-    """Scan ``samples_dir`` for prompt files (.txt), pairing each with a same-stem image if present."""
-    samples_dir = Path(samples_dir).expanduser()
+@dataclass
+class DpoState:
+    """Runtime state of Live-DPO within a training run.
+
+    Bundles the discovered entries, the current round's labeled pairs, the reference
+    snapshot that generated them, and the round-robin cursor over pairs. Pairs and
+    reference are only ever set together (a pair is meaningless without the policy
+    that generated it), so mutate this state through its methods.
+    """
+
+    entries: list[DpoEntry] = field(default_factory=list)
+    pairs: list[DpoPair] = field(default_factory=list)
+    reference_weights: dict[str, Tensor] | None = None
+    cursor: int = 0
+
+    def start_round(self, named_params: list[tuple[str, Tensor]], round_path: Path, save: bool) -> None:
+        """Snapshot the live trainable weights as this round's reference (CPU copy).
+
+        The snapshot is taken before generation, so it is the exact policy that produces
+        the round's samples. ``save`` persists it into the round directory for resume.
+        """
+        self.reference_weights = {
+            name: param.detach().to("cpu", copy=True) for name, param in named_params
+        }
+        if save:
+            torch.save(self.reference_weights, round_path / REFERENCE_FILENAME)
+
+    def load_labels(self, round_path: Path, output_dir: str | Path) -> int:
+        """Load the labeled pairs of a round this state snapshotted; returns the pair count."""
+        if self.reference_weights is None:
+            raise RuntimeError("load_labels called before start_round: pairs need a reference snapshot")
+        self.pairs = load_labeled_pairs(round_path, output_dir)
+        self.cursor = 0
+        return len(self.pairs)
+
+    def restore(self, round_path: Path, output_dir: str | Path, param_names: set[str]) -> int:
+        """Restore pairs and reference from a labeled round on disk (resume path).
+
+        All-or-nothing: state is only mutated once both loaded and the reference matches
+        the current trainable parameters. Returns the pair count.
+        """
+        reference = torch.load(round_path / REFERENCE_FILENAME, map_location="cpu", weights_only=True)
+        if set(reference) != param_names:
+            raise ValueError("reference snapshot does not match the current trainable parameters")
+        pairs = load_labeled_pairs(round_path, output_dir)
+
+        self.reference_weights = reference
+        self.pairs = pairs
+        self.cursor = 0
+        return len(pairs)
+
+    def next_pair(self, world_size: int, rank: int) -> DpoPair:
+        """Strided round-robin over pairs: DDP ranks see different pairs each step."""
+        pair = self.pairs[(self.cursor * world_size + rank) % len(self.pairs)]
+        self.cursor += 1
+        return pair
+
+    def window_steps(self, repeats: int, world_size: int) -> int:
+        """Combined-window length: steps needed to visit each pair ``repeats`` times."""
+        return max(1, (len(self.pairs) * repeats + world_size - 1) // world_size)
+
+    def in_window(self, global_step: int, interval: int, repeats: int, world_size: int) -> bool:
+        """Whether an optimization step falls inside a combined SFT+DPO window.
+
+        A window opens every ``interval`` steps and spans ``window_steps`` consecutive
+        steps; without labeled pairs there are no windows.
+        """
+        return bool(self.pairs) and global_step % interval < self.window_steps(repeats, world_size)
+
+    @contextmanager
+    def reference_swapped(self, named_params: list[tuple[str, Tensor]]) -> Iterator[None]:
+        """Temporarily load the reference snapshot into the given live params.
+
+        The stash of current weights stays on GPU (transient, LoRA-sized); the snapshot
+        itself lives on CPU between DPO steps.
+        """
+        stash = [param.detach().clone() for _, param in named_params]
+        try:
+            with torch.no_grad():
+                for name, param in named_params:
+                    param.copy_(self.reference_weights[name])
+            yield
+        finally:
+            with torch.no_grad():
+                for (_, param), current in zip(named_params, stash, strict=True):
+                    param.copy_(current)
+
+
+def pcgrad_combine(
+    sft_grads: list[Tensor], dpo_grads: list[Tensor]
+) -> tuple[list[Tensor], dict[str, float]]:
+    """Blend two gradient sets with two-task PCGrad (arXiv:2001.06782).
+
+    When the gradients conflict (negative inner product over the flattened parameter
+    space), each is projected onto the other's normal plane before summing:
+    ``g_sft' = g_sft - (dot/|g_dpo|^2)*g_dpo``, ``g_dpo' = g_dpo - (dot/|g_sft|^2)*g_sft``.
+    Non-conflicting inputs reduce to plain addition.
+
+    Returns (combined gradients, surgery metrics).
+    """
+    dot = sum(torch.sum(gs.float() * gd.float()) for gs, gd in zip(sft_grads, dpo_grads, strict=True))
+    sft_norm_sq = sum(torch.sum(gs.float() ** 2) for gs in sft_grads)
+    dpo_norm_sq = sum(torch.sum(gd.float() ** 2) for gd in dpo_grads)
+    cosine = (dot / (sft_norm_sq * dpo_norm_sq).clamp(min=1e-24).sqrt()).item()
+
+    conflict = dot.item() < 0 and sft_norm_sq.item() > 0 and dpo_norm_sq.item() > 0
+    sft_coeff = (dot / sft_norm_sq.clamp(min=1e-24)).item() if conflict else 0.0
+    dpo_coeff = (dot / dpo_norm_sq.clamp(min=1e-24)).item() if conflict else 0.0
+    combined = [
+        gs + gd - dpo_coeff * gd - sft_coeff * gs for gs, gd in zip(sft_grads, dpo_grads, strict=True)
+    ]
+    return combined, {"dpo/grad_cosine": cosine, "dpo/grad_conflict": float(conflict)}
+
+
+def discover_entries(samples_file: str | Path) -> list[DpoEntry]:
+    """Load labeling-round entries from a dataset JSON file in the regular metadata format.
+
+    The file must contain a list of objects with a ``caption`` key and an optional
+    ``media_path`` key (image for i2v conditioning; absent means text-to-video).
+    Relative ``media_path`` values resolve against the JSON file's directory, matching
+    the dataset preprocessing scripts.
+    """
+    json_path = Path(samples_file).expanduser()
+    data = json.loads(json_path.read_text())
+    if not isinstance(data, list):
+        raise ValueError(f"DPO dataset file must contain a list of objects: {json_path}")
+
     entries = []
-    for txt_path in sorted(samples_dir.glob("*.txt")):
-        prompt = txt_path.read_text().strip()
-        if not prompt:
-            logger.warning(f"Skipping DPO sample '{txt_path.name}': prompt file is empty")
+    for index, item in enumerate(data):
+        stem = f"{json_path.stem}_{index:04d}"
+        caption = (item.get("caption") or "").strip()
+        if not caption:
+            logger.warning(f"Skipping DPO sample '{stem}': empty caption")
             continue
-        image_path = next(
-            (p for ext in IMAGE_EXTENSIONS if (p := txt_path.with_suffix(ext)).exists()),
-            None,
-        )
-        entries.append(DpoEntry(stem=txt_path.stem, prompt=prompt, image_path=image_path))
+
+        image_path = None
+        media = item.get("media_path")
+        if media:
+            image_path = Path(str(media).strip())
+            if not image_path.is_absolute():
+                image_path = json_path.parent / image_path
+            if not image_path.is_file():
+                logger.warning(f"Skipping DPO sample '{stem}': media_path does not exist: {image_path}")
+                continue
+
+        entries.append(DpoEntry(stem=stem, prompt=caption, image_path=image_path))
 
     if not entries:
-        raise ValueError(f"No .txt prompt files found in DPO samples_dir: {samples_dir}")
+        raise ValueError(f"No valid samples found in DPO samples_file: {json_path}")
     return entries
 
 

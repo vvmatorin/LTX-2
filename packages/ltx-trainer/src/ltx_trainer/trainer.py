@@ -96,6 +96,7 @@ class LtxvTrainer:
         self._training_strategy.video_scale_factors = read_video_scale_factors(
             resolve_video_vae_path(self._config.model.model_path, self._config.model.video_vae_path)
         )
+        self._dpo = dpo.DpoState()
         self._cached_validation_embeddings = self._load_text_encoder_and_cache_embeddings()
         self._load_models()
         self._setup_accelerator()
@@ -111,8 +112,6 @@ class LtxvTrainer:
         self._training_state_size_warned = False
         self._sigma_tracker = SigmaBucketTracker()
         self._tb_writer: SummaryWriter | None = None
-        self._dpo_pairs: list[dpo.DpoPair] = []
-        self._dpo_step_counter = 0
 
     def train(  # noqa: PLR0912, PLR0915
         self,
@@ -171,13 +170,16 @@ class LtxvTrainer:
         else:
             logger.info("🚀 Starting training...")
 
-        # Restore Live-DPO pairs from the latest labeled round when resuming mid-cycle.
+        # Restore Live-DPO pairs and their reference snapshot.
         if cfg.dpo and initial_step > 0:
             latest_round = dpo.latest_round_with_labels(cfg.output_dir)
             if latest_round is not None:
-                self._dpo_pairs = dpo.load_labeled_pairs(latest_round, cfg.output_dir)
-                if self._dpo_pairs:
-                    logger.info(f"Restored {len(self._dpo_pairs)} Live-DPO pair(s) from {latest_round.name}")
+                try:
+                    param_names = {name for name, _ in self._named_trainable_params()}
+                    count = self._dpo.restore(latest_round, cfg.output_dir, param_names)
+                    logger.info(f"Restored {count} Live-DPO pair(s) from {latest_round.name}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not restore Live-DPO state from {latest_round.name}: {e}")
 
         # Create progress tracking (disabled for non-main processes or when explicitly disabled)
         progress_enabled = IS_MAIN_PROCESS and not disable_progress_bars
@@ -229,6 +231,18 @@ class LtxvTrainer:
                         )
                         loss = torch.zeros_like(loss).requires_grad_(True)
                     self._accelerator.backward(loss.mean())
+
+                    # Live-DPO combined step: inside a DPO window, blend one labeled pair's
+                    # preference gradient into this step's SFT gradient via gradient surgery
+                    # (single optimizer; DPO adds no extra optimization steps).
+                    if (
+                        cfg.dpo
+                        and is_optimization_step
+                        and self._dpo.in_window(
+                            self._global_step, cfg.dpo.interval, cfg.dpo.repeats, self._accelerator.num_processes
+                        )
+                    ):
+                        self._blend_dpo_gradient()
 
                     grad_norm = None
                     if self._accelerator.sync_gradients and cfg.optimization.max_grad_norm > 0:
@@ -347,18 +361,21 @@ class LtxvTrainer:
                         current_mem = get_gpu_memory_gb(device)
                         peak_mem_during_training = max(peak_mem_during_training, current_mem)
 
-                # Live-DPO runs outside the gradient-accumulation context: a labeling
-                # round halts training until labels arrive; short DPO bursts do their
-                # own full backward+step cycles on the labeled pairs.
-                if cfg.dpo and is_optimization_step and self._global_step > 0:
-                    if self._global_step % cfg.dpo.interval == 0:
-                        self._transformer.eval()
-                        try:
-                            self._run_dpo_round(progress)
-                        finally:
-                            self._transformer.train()
-                    elif self._dpo_pairs and self._global_step % cfg.dpo.run_interval == 0:
-                        self._run_dpo_burst()
+                # Live-DPO labeling round (following the validation cadence): halts
+                # training until labels arrive, then the labeled pairs feed the combined
+                # SFT+DPO steps until the next round.
+                if (
+                    cfg.dpo
+                    and is_optimization_step
+                    and self._global_step > 0
+                    and cfg.validation.interval
+                    and self._global_step % cfg.validation.interval == 0
+                ):
+                    self._transformer.eval()
+                    try:
+                        self._run_dpo_round(progress)
+                    finally:
+                        self._transformer.train()
 
         # Collect final stats
         train_end_time = time.time()
@@ -565,14 +582,13 @@ class LtxvTrainer:
         # Pre-compute Live-DPO prompt embeddings on disk while Gemma is still loaded.
         # All ranks discover the entries; only the main process encodes and writes
         # (other ranks read the files back at labeling-round time, after a barrier).
-        self._dpo_entries: list[dpo.DpoEntry] = []
         if self._config.dpo is not None:
-            self._dpo_entries = dpo.discover_entries(self._config.dpo.samples_dir)
+            self._dpo.entries = dpo.discover_entries(self._config.dpo.samples_file)
             if IS_MAIN_PROCESS:
                 cache_dir = dpo.embeddings_dir(self._config.output_dir)
-                logger.info(f"Pre-computing embeddings for {len(self._dpo_entries)} Live-DPO prompts...")
+                logger.info(f"Pre-computing embeddings for {len(self._dpo.entries)} Live-DPO prompts...")
                 with torch.inference_mode():
-                    for entry in self._dpo_entries:
+                    for entry in self._dpo.entries:
                         hidden_states, mask = text_encoder.encode([entry.prompt])[0]
                         out = self._embeddings_processor.process_hidden_states(hidden_states, mask)
                         dpo.save_embeddings(
@@ -630,7 +646,7 @@ class LtxvTrainer:
         need_vae_encoder = (
             self._config.validation.images is not None
             or self._config.validation.reference_videos is not None
-            or any(entry.image_path is not None for entry in self._dpo_entries)
+            or any(entry.image_path is not None for entry in self._dpo.entries)
         )
 
         # Load all model components (except text encoder - already handled)
@@ -1065,8 +1081,8 @@ class LtxvTrainer:
             if isinstance(module, (BaseTunerLayer, ModulesToSaveWrapper)):
                 module.reset_lora_parameters(adapter_name="default", init_lora_weights=True)
 
-    def _init_optimizer(self) -> None:
-        """Initialize the optimizer and learning rate scheduler."""
+    def _create_optimizer(self) -> torch.optim.Optimizer:
+        """Build an optimizer over the trainable params from the optimization config."""
         opt_cfg = self._config.optimization
 
         lr = opt_cfg.learning_rate
@@ -1074,17 +1090,19 @@ class LtxvTrainer:
         if opt_cfg.optimizer_type == "adamw":
             if "fused" not in params and torch.cuda.is_available():
                 params["fused"] = True
-            optimizer = AdamW(self._trainable_params, lr=lr, **params)
-        elif opt_cfg.optimizer_type == "adamw8bit":
+            return AdamW(self._trainable_params, lr=lr, **params)
+        if opt_cfg.optimizer_type == "adamw8bit":
             # noinspection PyUnresolvedReferences
             from bitsandbytes.optim import AdamW8bit  # noqa: PLC0415
 
-            optimizer = AdamW8bit(self._trainable_params, lr=lr, **params)
-        elif opt_cfg.optimizer_type == "muon":
-            optimizer = Muon(self._trainable_params, lr=lr, **params)
-        else:
-            raise ValueError(f"Unknown optimizer type: {opt_cfg.optimizer_type}")
+            return AdamW8bit(self._trainable_params, lr=lr, **params)
+        if opt_cfg.optimizer_type == "muon":
+            return Muon(self._trainable_params, lr=lr, **params)
+        raise ValueError(f"Unknown optimizer type: {opt_cfg.optimizer_type}")
 
+    def _init_optimizer(self) -> None:
+        """Initialize the optimizer and learning rate scheduler."""
+        optimizer = self._create_optimizer()
         lr_scheduler = self._create_scheduler(optimizer)
 
         # noinspection PyTypeChecker
@@ -1312,6 +1330,11 @@ class LtxvTrainer:
         logger.info(f"🎥 Validation samples for step {self._global_step} saved in {rel_outputs_path}")
         return video_paths
 
+    def _named_trainable_params(self) -> list[tuple[str, Tensor]]:
+        """Name→param pairs for the trainable (LoRA) weights, stable across DDP wrapping."""
+        unwrapped = self._accelerator.unwrap_model(self._transformer, keep_torch_compile=False)
+        return [(name, param) for name, param in unwrapped.named_parameters() if param.requires_grad]
+
     # Note: Use @torch.no_grad() instead of @torch.inference_mode() to avoid
     # FSDP inplace update errors after validation
     @torch.no_grad()
@@ -1331,9 +1354,9 @@ class LtxvTrainer:
 
         # Deterministic per-round sampling so every rank picks the same entries.
         rng = random.Random(cfg.seed + self._global_step)
-        entries = rng.sample(self._dpo_entries, min(dpo_cfg.num_samples, len(self._dpo_entries)))
+        entries = rng.sample(self._dpo.entries, min(dpo_cfg.num_samples, len(self._dpo.entries)))
         seeds = [cfg.validation.seed + seed_idx for seed_idx in range(dpo_cfg.num_seeds)]
-        inference_steps = dpo_cfg.inference_steps or cfg.validation.inference_steps
+        inference_steps = cfg.validation.inference_steps
 
         sampling_ctx = progress.start_sampling(
             num_prompts=len(entries),
@@ -1354,6 +1377,11 @@ class LtxvTrainer:
         round_path = dpo.round_dir(cfg.output_dir, self._global_step)
         if IS_MAIN_PROCESS:
             round_path.mkdir(parents=True, exist_ok=True)
+
+        # The DPO reference for this round's pairs is the exact policy that generates its
+        # samples: snapshot the trainable LoRA weights to CPU (and to disk, for resume).
+        self._dpo.start_round(self._named_trainable_params(), round_path, save=IS_MAIN_PROCESS)
+
         width, height, num_frames = cfg.validation.video_dims
         embeddings_cache = dpo.embeddings_dir(cfg.output_dir)
 
@@ -1435,72 +1463,59 @@ class LtxvTrainer:
         dpo.wait_for_labels(round_path)
         self._accelerator.wait_for_everyone()
 
-        self._dpo_pairs = dpo.load_labeled_pairs(round_path, cfg.output_dir)
-        self._dpo_step_counter = 0
-        if self._dpo_pairs:
-            logger.info(f"▶ Labels received: resuming with {len(self._dpo_pairs)} DPO pair(s).")
+        count = self._dpo.load_labels(round_path, cfg.output_dir)
+        if count:
+            logger.info(f"▶ Labels received: resuming with {count} DPO pair(s).")
         else:
             logger.info("▶ Labels received: all samples skipped, resuming without DPO runs.")
 
-    def _run_dpo_burst(self) -> None:
-        """Run a short DPO run: ``steps_per_run`` Flow-DPO optimization steps over the labeled pairs."""
+    def _blend_dpo_gradient(self) -> None:
+        """Blend one pair's DPO gradient into the current step's SFT gradient via PCGrad.
+
+        Called after the SFT backward of an optimization step: both gradients are already
+        all-reduced under DDP, so the surgery is identical on every rank. The shared
+        optimizer then sees a single reconciled gradient — no separate DPO optimizer or
+        extra optimization steps.
+        """
         cfg = self._config
-        dpo_cfg = cfg.dpo
+        pair = self._dpo.next_pair(self._accelerator.num_processes, self._accelerator.process_index)
 
-        original_lrs = None
-        if dpo_cfg.learning_rate is not None:
-            original_lrs = [group["lr"] for group in self._optimizer.param_groups]
-            for group in self._optimizer.param_groups:
-                group["lr"] = dpo_cfg.learning_rate
+        params = self._trainable_params
+        sft_grads = [p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p) for p in params]
+        for param in params:
+            param.grad = None
 
-        world_size = self._accelerator.num_processes
-        rank = self._accelerator.process_index
+        loss, metrics = self._dpo_training_step(pair)
 
-        burst_metrics: dict[str, list[float]] = {}
-        try:
-            for _ in range(dpo_cfg.steps_per_run):
-                # Ranks walk the pair list in a strided round-robin, so DDP ranks see
-                # different pairs while every rank performs the same number of steps.
-                pair = self._dpo_pairs[(self._dpo_step_counter * world_size + rank) % len(self._dpo_pairs)]
-                self._dpo_step_counter += 1
+        # Detached zero leaf, mirroring the SFT loop: backward still runs (DDP ranks
+        # must stay in sync) but contributes no gradient.
+        if not torch.isfinite(loss).all():
+            logger.warning(f"Non-finite DPO loss at global step {self._global_step}; skipping pair gradient.")
+            loss = torch.zeros_like(loss).requires_grad_(True)
+        # Accelerate divides backward losses by gradient_accumulation_steps; undo it —
+        # the DPO loss is applied once per optimization step, not per micro-batch.
+        self._accelerator.backward(loss * cfg.optimization.gradient_accumulation_steps)
 
-                loss, metrics = self._dpo_training_step(pair)
+        dpo_grads = [p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p) for p in params]
 
-                # Detached zero leaf, mirroring the SFT loop: backward still runs (DDP
-                # ranks must stay in sync) but contributes no gradient.
-                if not torch.isfinite(loss).all():
-                    logger.warning(f"Non-finite DPO loss at global step {self._global_step}; skipping pair gradient.")
-                    loss = torch.zeros_like(loss).requires_grad_(True)
-                self._accelerator.backward(loss)
-                if cfg.optimization.max_grad_norm > 0:
-                    self._accelerator.clip_grad_norm_(self._trainable_params, cfg.optimization.max_grad_norm)
-                self._optimizer.step()
-                self._optimizer.zero_grad()
+        combined, surgery_metrics = dpo.pcgrad_combine(sft_grads, dpo_grads)
+        with torch.no_grad():
+            for param, grad in zip(params, combined, strict=True):
+                param.grad = grad
 
-                metrics["dpo/loss"] = loss.detach().item()
-                for key, value in metrics.items():
-                    burst_metrics.setdefault(key, []).append(value)
-        finally:
-            if original_lrs is not None:
-                for group, lr in zip(self._optimizer.param_groups, original_lrs, strict=True):
-                    group["lr"] = lr
-
+        metrics["dpo/loss"] = loss.detach().item()
+        metrics.update(surgery_metrics)
         if IS_MAIN_PROCESS:
-            averaged = {key: sum(values) / len(values) for key, values in burst_metrics.items()}
-            self._log_metrics(averaged)
-            logger.info(
-                f"DPO burst at step {self._global_step}: {dpo_cfg.steps_per_run} step(s), "
-                f"loss={averaged['dpo/loss']:.4f}, accuracy={averaged['dpo/accuracy']:.2f}"
-            )
+            self._log_metrics(metrics)
 
     def _dpo_training_step(self, pair: dpo.DpoPair) -> tuple[Tensor, dict[str, float]]:
         """One Flow-DPO step on a (chosen, rejected) pair.
 
-        The policy is the LoRA-adapted model; the reference is the same model with its
-        adapters disabled, so no second model copy is needed. When the pair carries audio
-        latents, the audio modality joins the forward pass (matching the joint generation
-        that produced the samples); dpo.audio_loss_weight decides whether its velocity
-        margin enters the loss.
+        The reference is the LoRA snapshot taken at the pair's labeling round — the exact
+        policy that generated the samples — applied via a temporary weight swap, so no
+        second model copy is needed. When the pair carries audio latents, the audio
+        modality joins the forward pass (matching the joint generation that produced the
+        samples); dpo.audio_loss_weight decides whether its velocity margin enters the loss.
         """
         dpo_cfg = self._config.dpo
         inputs = dpo.prepare_pair_inputs(
@@ -1520,8 +1535,7 @@ class LtxvTrainer:
         video_pred, audio_pred = self._transformer(video=inputs.video, audio=inputs.audio, perturbations=None)
         policy_mse, policy_audio_mse = compute_mses(video_pred, audio_pred)
 
-        unwrapped = self._accelerator.unwrap_model(self._transformer, keep_torch_compile=False)
-        with torch.no_grad(), unwrapped.disable_adapter():
+        with torch.no_grad(), self._dpo.reference_swapped(self._named_trainable_params()):
             ref_video_pred, ref_audio_pred = self._transformer(
                 video=inputs.video, audio=inputs.audio, perturbations=None
             )

@@ -34,9 +34,9 @@ export async function POST(req: Request) {
   }
 
   if (uiConfig.dpo?.enabled) {
-    const samplesDir = uiConfig.dpo.samplesDir?.trim();
-    if (!samplesDir || !fs.existsSync(samplesDir)) {
-      return NextResponse.json({ error: `Live-DPO samples directory does not exist: ${samplesDir}` }, { status: 400 });
+    const samplesFile = uiConfig.dpo.samplesFile?.trim();
+    if (!samplesFile || !fs.existsSync(samplesFile) || !fs.statSync(samplesFile).isFile()) {
+      return NextResponse.json({ error: `Live-DPO samples file does not exist: ${samplesFile}` }, { status: 400 });
     }
   }
 
@@ -188,17 +188,14 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
     },
     dpo: uiConfig.dpo?.enabled
       ? {
-          samples_dir: uiConfig.dpo.samplesDir,
+          samples_file: uiConfig.dpo.samplesFile,
           num_samples: uiConfig.dpo.numSamples,
           num_seeds: uiConfig.dpo.numSeeds,
           interval: uiConfig.dpo.interval,
-          run_interval: uiConfig.dpo.runInterval,
-          steps_per_run: uiConfig.dpo.stepsPerRun,
+          repeats: uiConfig.dpo.repeats,
           beta: uiConfig.dpo.beta,
           generate_audio: uiConfig.dpo.generateAudio,
           audio_loss_weight: uiConfig.dpo.audioLossWeight,
-          learning_rate: uiConfig.dpo.learningRate ?? null,
-          inference_steps: uiConfig.dpo.inferenceSteps ?? null,
         }
       : undefined,
     checkpoints: {

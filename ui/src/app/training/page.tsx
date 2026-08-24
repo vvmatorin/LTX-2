@@ -117,8 +117,8 @@ function TrainingPageInner() {
         setStartError('Live-DPO requires LoRA training mode and the text_to_video strategy.');
         return;
       }
-      if (!config.dpo.samplesDir.trim()) {
-        setStartError('Live-DPO requires a samples directory (.txt prompts, optional same-stem images).');
+      if (!config.dpo.samplesFile.trim()) {
+        setStartError('Live-DPO requires a samples file (dataset .json with caption + media_path entries).');
         return;
       }
     }

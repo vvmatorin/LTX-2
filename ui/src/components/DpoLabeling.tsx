@@ -115,8 +115,8 @@ export function DpoLabeling({ jobId, round, submitLabels, isSubmitting }: Props)
           </Badge>
         ) : (
           <span className="text-muted-foreground text-xs">
-            Training is halted until labels are submitted. Pick the best and worst seed per sample, or skip rows
-            without a clear winner.{withAudio && ' 🔊 Hover a video to hear its audio.'}
+            Training is halted until labels are submitted. Pick the best and worst seed per sample, or skip rows without
+            a clear winner.{withAudio && ' 🔊 Hover a video to hear its audio.'}
           </span>
         )}
         <div className="ml-auto flex items-center gap-3">

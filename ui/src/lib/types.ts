@@ -173,17 +173,14 @@ export interface TrainingConfig {
   };
   dpo: {
     enabled: boolean;
-    samplesDir: string;
+    samplesFile: string;
     numSamples: number;
     numSeeds: number;
     interval: number;
-    runInterval: number;
-    stepsPerRun: number;
+    repeats: number;
     beta: number;
     generateAudio: boolean;
     audioLossWeight: number;
-    learningRate: number | null;
-    inferenceSteps: number | null;
   };
   checkpoints: {
     interval: number;

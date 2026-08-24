@@ -461,20 +461,23 @@ class ValidationConfig(ConfigBaseModel):
 class DpoConfig(ConfigBaseModel):
     """Configuration for Live-DPO: human-in-the-loop preference optimization interleaved with training.
 
-    Every ``interval`` steps the trainer renders ``num_seeds`` videos for each of ``num_samples``
-    randomly drawn entries from ``samples_dir``, halts, and waits for best/worst labels
-    (submitted through the UI). The labeled pairs then drive short Flow-DPO bursts every
-    ``run_interval`` steps until the next labeling round. See https://arxiv.org/abs/2501.13918.
+    At every validation interval the trainer renders ``num_seeds`` videos for each of
+    ``num_samples`` randomly drawn entries from ``samples_file``, halts, and waits for
+    best/worst labels (submitted through the UI). The labeled pairs are then blended into
+    regular training steps (Flow-DPO gradient + gradient surgery against the SFT gradient)
+    in short windows every ``interval`` steps until the next labeling round.
+    See https://arxiv.org/abs/2501.13918.
     """
 
-    samples_dir: str = Field(
-        description="Folder with labeling-round inputs: .txt prompt files, each optionally "
-        "paired with a same-stem image (png/jpg/jpeg/webp) for image-to-video conditioning.",
+    samples_file: str = Field(
+        description="Dataset JSON file in the regular metadata format: a list of objects with "
+        "'caption' and an optional 'media_path' (image for i2v conditioning; relative paths "
+        "resolve against the JSON file's directory).",
     )
 
     num_samples: int = Field(
         default=4,
-        description="Number of entries randomly sampled from samples_dir per labeling round.",
+        description="Number of entries randomly sampled from samples_file per labeling round.",
         ge=1,
     )
 
@@ -485,19 +488,14 @@ class DpoConfig(ConfigBaseModel):
     )
 
     interval: int = Field(
-        description="Number of training steps between labeling rounds. "
-        "Training halts at each round until labels are submitted.",
+        description="Number of training steps between combined SFT+DPO windows (only active while "
+        "labeled pairs exist). Labeling rounds themselves follow validation.interval.",
         gt=0,
     )
 
-    run_interval: int = Field(
-        description="Number of training steps between short DPO bursts (only runs while labeled pairs exist).",
-        gt=0,
-    )
-
-    steps_per_run: int = Field(
-        default=10,
-        description="Number of DPO optimization steps per burst.",
+    repeats: int = Field(
+        default=1,
+        description="How many times each labeled pair is blended into training per DPO window.",
         gt=0,
     )
 
@@ -523,22 +521,12 @@ class DpoConfig(ConfigBaseModel):
         ge=0.0,
     )
 
-    learning_rate: float | None = Field(
-        default=None,
-        description="Learning rate used during DPO bursts. None reuses the current optimizer LR.",
-    )
-
-    inference_steps: int | None = Field(
-        default=None,
-        description="Denoising steps for labeling-round generation. None reuses validation.inference_steps.",
-        gt=0,
-    )
-
-    @field_validator("samples_dir")
+    @field_validator("samples_file")
     @classmethod
-    def validate_samples_dir(cls, v: str) -> str:
-        if not Path(v).expanduser().is_dir():
-            raise ValueError(f"DPO samples_dir does not exist or is not a directory: {v}")
+    def validate_samples_file(cls, v: str) -> str:
+        path = Path(v).expanduser()
+        if not path.is_file() or path.suffix != ".json":
+            raise ValueError(f"DPO samples_file must be an existing .json file: {v}")
         return v
 
     @model_validator(mode="after")
@@ -711,14 +699,18 @@ class LtxTrainerConfig(ConfigBaseModel):
         if self.training_strategy.name == "video_to_video" and self.model.training_mode != "lora":
             raise ValueError("Training mode must be 'lora' when using video_to_video strategy")
 
-        # Live-DPO relies on the base model (LoRA adapters disabled) as the frozen reference
-        # and on text_to_video input preparation.
+        # Live-DPO snapshots the trainable weights at each labeling round as the DPO reference
+        # (feasible for LoRA-sized adapters only) and relies on text_to_video input preparation.
         if self.dpo is not None:
             if self.model.training_mode != "lora":
-                raise ValueError("Live-DPO requires training_mode 'lora' (the base model serves as the reference)")
+                raise ValueError("Live-DPO requires training_mode 'lora' (the reference is a LoRA weight snapshot)")
             if self.training_strategy.name != "text_to_video":
                 raise ValueError("Live-DPO is only supported with the text_to_video training strategy")
             if self.validation.video_dims[2] == 1:
                 raise ValueError("Live-DPO requires video validation dims (validation.video_dims frames > 1)")
+            if not self.validation.interval:
+                raise ValueError(
+                    "Live-DPO requires validation.interval (labeling rounds follow the validation cadence)"
+                )
 
         return self

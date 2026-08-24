@@ -4,16 +4,7 @@ import type { TrainingConfig } from '@/lib/types';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Section,
-  NumberField,
-  NullableNumberField,
-  TextField,
-  SelectField,
-  SwitchField,
-  ListInput,
-  VideoDimsField,
-} from './fields';
+import { Section, NumberField, TextField, SelectField, SwitchField, ListInput, VideoDimsField } from './fields';
 
 type UpdateFn = (section: keyof TrainingConfig, patch: Record<string, unknown>) => void;
 
@@ -503,13 +494,13 @@ export function DpoSection({ config, update }: SectionProps) {
         {config.dpo.enabled && (
           <>
             <TextField
-              label="Samples Directory (.txt prompts, optional same-stem conditioning images)"
-              value={config.dpo.samplesDir}
-              onChange={v => update('dpo', { samplesDir: v })}
-              placeholder="/path/to/dpo-samples"
+              label="Samples File (dataset .json: caption + media_path)"
+              value={config.dpo.samplesFile}
+              onChange={v => update('dpo', { samplesFile: v })}
+              placeholder="/path/to/dpo-samples.json"
               mono
             />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
               <NumberField
                 label="Samples per Round"
                 value={config.dpo.numSamples}
@@ -521,48 +512,22 @@ export function DpoSection({ config, update }: SectionProps) {
                 onChange={v => update('dpo', { numSeeds: Math.max(2, Math.round(v)) })}
               />
               <NumberField
-                label="Labeling Interval (steps)"
+                label="DPO Interval (steps)"
                 value={config.dpo.interval}
                 onChange={v => update('dpo', { interval: Math.max(1, Math.round(v)) })}
               />
               <NumberField
-                label="DPO Run Interval (steps)"
-                value={config.dpo.runInterval}
-                onChange={v => update('dpo', { runInterval: Math.max(1, Math.round(v)) })}
+                label="Repeats per Run"
+                value={config.dpo.repeats}
+                onChange={v => update('dpo', { repeats: Math.max(1, Math.round(v)) })}
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <NumberField
-                label="Steps per DPO Run"
-                value={config.dpo.stepsPerRun}
-                onChange={v => update('dpo', { stepsPerRun: Math.max(1, Math.round(v)) })}
-              />
-              <NumberField
-                label="Beta"
-                value={config.dpo.beta}
-                onChange={v => update('dpo', { beta: v })}
-                step={100}
-              />
-              <NullableNumberField
-                label="Learning Rate"
-                value={config.dpo.learningRate}
-                onChange={v => update('dpo', { learningRate: v })}
-                placeholder="training LR"
-              />
-              <NullableNumberField
-                label="Inference Steps"
-                value={config.dpo.inferenceSteps}
-                onChange={v => update('dpo', { inferenceSteps: v })}
-                placeholder="validation steps"
-              />
+              <NumberField label="Beta" value={config.dpo.beta} onChange={v => update('dpo', { beta: v })} step={100} />
             </div>
             <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
               <SwitchField
                 label="Generate Audio (video cross-attends to audio)"
                 checked={config.dpo.generateAudio}
-                onChange={v =>
-                  update('dpo', { generateAudio: v, ...(v ? {} : { audioLossWeight: 0 }) })
-                }
+                onChange={v => update('dpo', { generateAudio: v, ...(v ? {} : { audioLossWeight: 0 }) })}
               />
               {config.dpo.generateAudio && (
                 <NumberField
@@ -574,9 +539,10 @@ export function DpoSection({ config, update }: SectionProps) {
               )}
             </div>
             <p className="text-muted-foreground text-xs">
-              Every labeling interval, training renders the configured seeds for randomly sampled entries and halts
-              until best/worst labels are submitted from the Runs page. Labeled pairs then drive short DPO runs at
-              each run interval until the next labeling round.
+              At every validation interval, training renders the configured seeds for randomly sampled entries and halts
+              until best/worst labels are submitted from the Runs page. Labeled pairs are then blended into regular
+              training steps (with gradient surgery against the SFT objective) in short windows at each DPO interval,
+              each pair used the configured number of repeats, until the next labeling round.
             </p>
           </>
         )}
