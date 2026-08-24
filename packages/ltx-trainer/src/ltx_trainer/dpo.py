@@ -135,6 +135,24 @@ class DpoState:
                     param.copy_(current)
 
 
+@contextmanager
+def dropout_disabled(module: torch.nn.Module) -> Iterator[None]:
+    """Put only the Dropout submodules in eval mode for a deterministic forward.
+
+    Deliberately not ``module.eval()``: the model must stay in training mode so
+    gradient checkpointing — gated on ``self.training`` — remains active, or the
+    un-checkpointed DPO forward blows up activation memory.
+    """
+    dropouts = [m for m in module.modules() if isinstance(m, torch.nn.Dropout) and m.training]
+    try:
+        for m in dropouts:
+            m.eval()
+        yield
+    finally:
+        for m in dropouts:
+            m.train()
+
+
 def pcgrad_combine(
     sft_grads: list[Tensor], dpo_grads: list[Tensor]
 ) -> tuple[list[Tensor], dict[str, float]]:

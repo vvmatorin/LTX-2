@@ -1575,11 +1575,11 @@ class LtxvTrainer:
                 audio_mse = dpo.masked_per_sample_mse(audio_pred, inputs.audio_targets, inputs.audio_loss_mask)
             return video_mse, audio_mse
 
-        # Both forwards run in eval mode (gradients still flow): with LoRA dropout active,
-        # all four velocity MSEs of the margin would carry independent dropout noise, which
-        # beta amplifies inside the sigmoid. Reference DPO implementations disable dropout.
-        self._transformer.eval()
-        try:
+        # Both forwards run with dropout disabled: with LoRA dropout active, all four
+        # velocity MSEs of the margin would carry independent dropout noise, which beta
+        # amplifies inside the sigmoid. Reference DPO implementations disable dropout.
+        # Not transformer.eval() — that would also turn off gradient checkpointing.
+        with dpo.dropout_disabled(self._transformer):
             video_pred, audio_pred = self._transformer(video=inputs.video, audio=inputs.audio, perturbations=None)
             policy_mse, policy_audio_mse = compute_mses(video_pred, audio_pred)
 
@@ -1588,8 +1588,6 @@ class LtxvTrainer:
                     video=inputs.video, audio=inputs.audio, perturbations=None
                 )
                 ref_mse, ref_audio_mse = compute_mses(ref_video_pred, ref_audio_pred)
-        finally:
-            self._transformer.train()
 
         return dpo.flow_dpo_loss(
             policy_mse,
