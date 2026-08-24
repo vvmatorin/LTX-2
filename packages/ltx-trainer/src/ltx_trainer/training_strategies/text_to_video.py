@@ -20,6 +20,9 @@ from ltx_trainer.training_strategies.base_strategy import (
     ModelInputs,
     TrainingStrategy,
     TrainingStrategyConfigBase,
+    create_per_token_timesteps,
+    get_audio_positions,
+    get_video_positions,
 )
 
 
@@ -205,15 +208,16 @@ class TextToVideoStrategy(TrainingStrategy):
         video_targets = video_noise - video_latents
 
         # Create per-token timesteps (conditioning tokens get timestep 0)
-        video_timesteps = self._create_per_token_timesteps(video_conditioning_mask, sigmas.squeeze())
+        video_timesteps = create_per_token_timesteps(video_conditioning_mask, sigmas.squeeze())
 
         # Generate video positions using ltx_core's native implementation
-        video_positions = self._get_video_positions(
+        video_positions = get_video_positions(
             num_frames=num_frames,
             height=height,
             width=width,
             batch_size=batch_size,
             fps=fps,
+            scale_factors=self.video_scale_factors,
             device=device,
             dtype=torch.float32,
         )
@@ -375,7 +379,7 @@ class TextToVideoStrategy(TrainingStrategy):
         audio_timesteps = sigmas.view(-1, 1).expand(-1, audio_seq_len)
 
         # Generate audio positions
-        audio_positions = self._get_audio_positions(
+        audio_positions = get_audio_positions(
             num_time_steps=audio_seq_len,
             batch_size=batch_size,
             device=device,

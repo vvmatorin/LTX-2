@@ -22,15 +22,20 @@ import torch
 from torch import Tensor
 from torch.nn.functional import logsigmoid
 
-from ltx_core.components.patchifiers import AudioPatchifier, VideoLatentPatchifier, get_pixel_coords
+from ltx_core.components.patchifiers import AudioPatchifier, VideoLatentPatchifier
 from ltx_core.model.transformer.modality import Modality
-from ltx_core.types import AudioLatentShape, SpatioTemporalScaleFactors, VideoLatentShape
+from ltx_core.types import SpatioTemporalScaleFactors
 from ltx_trainer import logger
+from ltx_trainer.training_strategies.base_strategy import (
+    ModelInputs,
+    create_per_token_timesteps,
+    get_audio_positions,
+    get_video_positions,
+)
 from ltx_trainer.validation_runner import PromptEmbeddings
 
 PENDING_FILENAME = "pending.json"
 LABELS_FILENAME = "labels.json"
-REFERENCE_FILENAME = "dpo_reference.pt"
 NEGATIVE_EMBEDDINGS_STEM = "_negative"
 
 
@@ -61,18 +66,6 @@ class DpoPair:
 
 
 @dataclass
-class DpoPairInputs:
-    """Transformer inputs for a stacked [chosen; rejected] pair (row 0 = chosen)."""
-
-    video: Modality
-    video_targets: Tensor  # [2, S, C]
-    video_loss_mask: Tensor  # [2, S]
-    audio: Modality | None = None
-    audio_targets: Tensor | None = None  # [2, T, C]
-    audio_loss_mask: Tensor | None = None  # [2, T]
-
-
-@dataclass
 class DpoState:
     """Runtime state of Live-DPO within a training run.
 
@@ -87,17 +80,15 @@ class DpoState:
     reference_weights: dict[str, Tensor] | None = None
     cursor: int = 0
 
-    def start_round(self, named_params: list[tuple[str, Tensor]], round_path: Path, save: bool) -> None:
+    def start_round(self, named_params: list[tuple[str, Tensor]]) -> None:
         """Snapshot the live trainable weights as this round's reference (CPU copy).
 
         The snapshot is taken before generation, so it is the exact policy that produces
-        the round's samples. ``save`` persists it into the round directory for resume.
+        the round's samples.
         """
         self.reference_weights = {
             name: param.detach().to("cpu", copy=True) for name, param in named_params
         }
-        if save:
-            torch.save(self.reference_weights, round_path / REFERENCE_FILENAME)
 
     def load_labels(self, round_path: Path, output_dir: str | Path) -> int:
         """Load the labeled pairs of a round this state snapshotted; returns the pair count."""
@@ -106,22 +97,6 @@ class DpoState:
         self.pairs = load_labeled_pairs(round_path, output_dir)
         self.cursor = 0
         return len(self.pairs)
-
-    def restore(self, round_path: Path, output_dir: str | Path, param_names: set[str]) -> int:
-        """Restore pairs and reference from a labeled round on disk (resume path).
-
-        All-or-nothing: state is only mutated once both loaded and the reference matches
-        the current trainable parameters. Returns the pair count.
-        """
-        reference = torch.load(round_path / REFERENCE_FILENAME, map_location="cpu", weights_only=True)
-        if set(reference) != param_names:
-            raise ValueError("reference snapshot does not match the current trainable parameters")
-        pairs = load_labeled_pairs(round_path, output_dir)
-
-        self.reference_weights = reference
-        self.pairs = pairs
-        self.cursor = 0
-        return len(pairs)
 
     def next_pair(self, world_size: int, rank: int) -> DpoPair:
         """Strided round-robin over pairs: DDP ranks see different pairs each step."""
@@ -310,19 +285,17 @@ def prepare_pair_inputs(
     fps: float,
     scale_factors: SpatioTemporalScaleFactors,
     device: torch.device,
-) -> DpoPairInputs:
-    """Build transformer inputs for a stacked [chosen; rejected] pair.
+) -> ModelInputs:
+    """Build transformer inputs for a stacked [chosen; rejected] pair (row 0 = chosen).
 
     Mirrors the text_to_video SFT input preparation: shared sigma (uniform, per Flow-DPO)
     and shared noise across the pair, first-frame conditioning for i2v pairs, velocity
     targets. When the pair carries audio latents, the audio modality is included (noised
     at the same sigma, like joint SFT) so the video branch sees its audio context.
     """
-    patchifier = VideoLatentPatchifier(patch_size=1)
-
     latents = torch.stack([pair.chosen_latent, pair.rejected_latent]).to(device=device, dtype=torch.bfloat16)
     _, _, num_frames, height, width = latents.shape
-    tokens = patchifier.patchify(latents)  # [2, S, C]
+    tokens = VideoLatentPatchifier(patch_size=1).patchify(latents)  # [2, S, C]
     seq_len = tokens.shape[1]
     frame_tokens = height * width
 
@@ -334,16 +307,7 @@ def prepare_pair_inputs(
     conditioning_mask = torch.zeros(2, seq_len, dtype=torch.bool, device=device)
     if pair.is_i2v:
         conditioning_mask[:, :frame_tokens] = True
-        noisy = torch.where(conditioning_mask.unsqueeze(-1), tokens.float(), noisy)
-
-    timesteps = torch.where(conditioning_mask, torch.zeros_like(sigma), sigma.expand(2, seq_len))
-
-    latent_coords = patchifier.get_patch_grid_bounds(
-        output_shape=VideoLatentShape(frames=num_frames, height=height, width=width, batch=2, channels=128),
-        device=device,
-    )
-    positions = get_pixel_coords(latent_coords, scale_factors=scale_factors, causal_fix=True).to(torch.float32)
-    positions[:, 0, ...] = positions[:, 0, ...] / fps
+        noisy = torch.where(conditioning_mask.unsqueeze(-1), tokens, noisy)
 
     keyframes_mask = torch.zeros(2, seq_len, 1, device=device, dtype=torch.float32)
     keyframes_mask[:, :frame_tokens] = 1.0
@@ -352,13 +316,29 @@ def prepare_pair_inputs(
         enabled=True,
         sigma=sigma.expand(2),
         latent=noisy,
-        timesteps=timesteps,
-        positions=positions,
+        timesteps=create_per_token_timesteps(conditioning_mask, sigma.expand(2)),
+        positions=get_video_positions(
+            num_frames=num_frames,
+            height=height,
+            width=width,
+            batch_size=2,
+            fps=fps,
+            scale_factors=scale_factors,
+            device=device,
+            dtype=torch.float32,
+        ),
         context=pair.embeddings.video_context_positive.to(device).expand(2, -1, -1),
         context_mask=None,
         keyframes_mask=keyframes_mask,
     )
-    inputs = DpoPairInputs(video=video_modality, video_targets=targets, video_loss_mask=(~conditioning_mask).float())
+    inputs = ModelInputs(
+        video=video_modality,
+        audio=None,
+        video_targets=targets,
+        audio_targets=None,
+        video_loss_mask=(~conditioning_mask).float(),
+        audio_loss_mask=None,
+    )
 
     has_audio = (
         pair.chosen_audio_latent is not None
@@ -368,27 +348,22 @@ def prepare_pair_inputs(
     if not has_audio:
         return inputs
 
-    audio_patchifier = AudioPatchifier(patch_size=1)
     audio_latents = torch.stack([pair.chosen_audio_latent, pair.rejected_audio_latent]).to(
         device=device, dtype=torch.bfloat16
     )
-    audio_tokens = audio_patchifier.patchify(audio_latents)  # [2, T, C*mel_bins]
+    audio_tokens = AudioPatchifier(patch_size=1).patchify(audio_latents)  # [2, T, C*mel_bins]
     audio_seq_len = audio_tokens.shape[1]
 
     audio_noise = torch.randn(1, audio_seq_len, audio_tokens.shape[2], device=device, dtype=audio_tokens.dtype)
-    noisy_audio = (1 - sigma) * audio_tokens + sigma * audio_noise
-
-    audio_positions = audio_patchifier.get_patch_grid_bounds(
-        output_shape=AudioLatentShape(frames=audio_seq_len, mel_bins=16, batch=2, channels=8),
-        device=device,
-    ).to(torch.float32)
 
     inputs.audio = Modality(
         enabled=True,
         sigma=sigma.expand(2),
-        latent=noisy_audio,
+        latent=(1 - sigma) * audio_tokens + sigma * audio_noise,
         timesteps=sigma.expand(2, audio_seq_len),
-        positions=audio_positions,
+        positions=get_audio_positions(
+            num_time_steps=audio_seq_len, batch_size=2, device=device, dtype=torch.float32
+        ),
         context=pair.embeddings.audio_context_positive.to(device).expand(2, -1, -1),
         context_mask=None,
     )
@@ -447,10 +422,3 @@ def flow_dpo_loss(
     return loss, metrics
 
 
-def latest_round_with_labels(output_dir: str | Path) -> Path | None:
-    """Most recent labeled round directory, or None. Used to restore pairs after a resume."""
-    root = dpo_root(output_dir)
-    if not root.exists():
-        return None
-    labeled = [p for p in sorted(root.glob("round_*")) if (p / LABELS_FILENAME).exists()]
-    return labeled[-1] if labeled else None

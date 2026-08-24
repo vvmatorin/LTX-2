@@ -24,6 +24,64 @@ from ltx_trainer.timestep_samplers import TimestepSampler
 DEFAULT_FPS = 24
 
 
+def get_video_positions(
+    num_frames: int,
+    height: int,
+    width: int,
+    batch_size: int,
+    fps: float,
+    scale_factors: SpatioTemporalScaleFactors,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> Tensor:
+    """Per-token video positions ([B, 3, seq_len, 2] pixel-coordinate patch bounds).
+
+    Uses ltx_core's native grid with the causal fix; the temporal axis is scaled by
+    1/fps so positions are in seconds.
+    """
+    latent_coords = VideoLatentPatchifier(patch_size=1).get_patch_grid_bounds(
+        output_shape=VideoLatentShape(
+            frames=num_frames,
+            height=height,
+            width=width,
+            batch=batch_size,
+            channels=128,  # Video latent channels
+        ),
+        device=device,
+    )
+    pixel_coords = get_pixel_coords(latent_coords=latent_coords, scale_factors=scale_factors, causal_fix=True)
+    pixel_coords = pixel_coords.to(dtype)
+    pixel_coords[:, 0, ...] = pixel_coords[:, 0, ...] / fps
+    return pixel_coords
+
+
+def get_audio_positions(
+    num_time_steps: int,
+    batch_size: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> Tensor:
+    """Per-token audio positions ([B, 1, num_time_steps, 2]) for patchified audio latents
+    ([B, T, C*mel_bins] with C=8 channels and 16 mel bins, as AudioPatchifier produces)."""
+    latent_coords = AudioPatchifier(patch_size=1).get_patch_grid_bounds(
+        output_shape=AudioLatentShape(
+            frames=num_time_steps,
+            mel_bins=16,
+            batch=batch_size,
+            channels=8,  # Audio latent channels
+        ),
+        device=device,
+    )
+    return latent_coords.to(dtype)
+
+
+def create_per_token_timesteps(conditioning_mask: Tensor, sampled_sigma: Tensor) -> Tensor:
+    """Per-token timesteps [B, seq_len]: conditioning tokens (mask True) get 0, the rest
+    get their sample's sigma (accepted as [B,] or [B, 1, 1])."""
+    expanded_sigma = sampled_sigma.view(-1, 1).expand_as(conditioning_mask)
+    return torch.where(conditioning_mask, torch.zeros_like(expanded_sigma), expanded_sigma)
+
+
 class TrainingStrategyConfigBase(BaseModel):
     """Base configuration class for training strategies.
     All strategy-specific configuration classes should inherit from this.
@@ -156,101 +214,6 @@ class TrainingStrategy(ABC):
             Dictionary of metadata key-value pairs (values must be JSON-serializable)
         """
         return {}
-
-    def _get_video_positions(
-        self,
-        num_frames: int,
-        height: int,
-        width: int,
-        batch_size: int,
-        fps: float,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> Tensor:
-        """Generate video position embeddings using ltx_core's native implementation.
-        Args:
-            num_frames: Number of latent frames
-            height: Latent height
-            width: Latent width
-            batch_size: Batch size
-            fps: Frames per second
-            device: Target device
-            dtype: Target dtype
-        Returns:
-            Position tensor of shape [B, 3, seq_len, 2]
-        """
-        latent_coords = self._video_patchifier.get_patch_grid_bounds(
-            output_shape=VideoLatentShape(
-                frames=num_frames,
-                height=height,
-                width=width,
-                batch=batch_size,
-                channels=128,  # Video latent channels
-            ),
-            device=device,
-        )
-
-        # Convert latent coords to pixel coords with causal fix
-        pixel_coords = get_pixel_coords(
-            latent_coords=latent_coords,
-            scale_factors=self.video_scale_factors,
-            causal_fix=True,
-        ).to(dtype)
-
-        # Scale temporal dimension by 1/fps to get time in seconds
-        pixel_coords[:, 0, ...] = pixel_coords[:, 0, ...] / fps
-
-        return pixel_coords
-
-    def _get_audio_positions(
-        self,
-        num_time_steps: int,
-        batch_size: int,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> Tensor:
-        """Generate audio position embeddings using ltx_core's native implementation.
-        Args:
-            num_time_steps: Number of audio time steps (T, not T*mel_bins)
-            batch_size: Batch size
-            device: Target device
-            dtype: Target dtype
-        Returns:
-            Position tensor of shape [B, 1, num_time_steps, 2]
-        Note:
-            Audio latents should be in patchified format [B, T, C*F] = [B, T, 128]
-            where T is the number of time steps, C=8 channels, F=16 mel bins.
-            This matches the format produced by AudioPatchifier.patchify().
-        """
-        mel_bins = 16
-
-        latent_coords = self._audio_patchifier.get_patch_grid_bounds(
-            output_shape=AudioLatentShape(
-                frames=num_time_steps,
-                mel_bins=mel_bins,
-                batch=batch_size,
-                channels=8,  # Audio latent channels
-            ),
-            device=device,
-        )
-
-        return latent_coords.to(dtype)
-
-    @staticmethod
-    def _create_per_token_timesteps(conditioning_mask: Tensor, sampled_sigma: Tensor) -> Tensor:
-        """Create per-token timesteps based on conditioning mask.
-        Args:
-            conditioning_mask: Boolean mask of shape (batch_size, sequence_length),
-                where True = conditioning token (timestep=0), False = target token (use sigma)
-            sampled_sigma: Sampled sigma values of shape (batch_size,) or (batch_size, 1, 1)
-        Returns:
-            Timesteps tensor of shape [batch_size, sequence_length]
-        """
-        # Expand to match conditioning mask shape [B, seq_len]
-        expanded_sigma = sampled_sigma.view(-1, 1).expand_as(conditioning_mask)
-
-        # Conditioning tokens get 0, target tokens get the sampled sigma
-        return torch.where(conditioning_mask, torch.zeros_like(expanded_sigma), expanded_sigma)
 
     @staticmethod
     def _create_first_frame_conditioning_mask(

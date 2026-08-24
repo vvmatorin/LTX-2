@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { safeId, toErrorMessage } from '@/lib/utils';
 import { LABELS_FILENAME, PENDING_FILENAME, getJobDpoRoot, listRounds, validateChoices } from '@/lib/dpoServer';
 import type { DpoChoice, DpoManifest } from '@/lib/types';
@@ -68,13 +69,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     })),
   };
 
-  // tmp+rename so the polling trainer never reads a partial file.
+  // Unique tmp + hard link: the polling trainer never reads a partial file, and the
+  // create-exclusive link makes the immutability check race-proof (EEXIST loses).
+  const tmpPath = `${labelsPath}.${randomUUID()}.tmp`;
   try {
-    const tmpPath = labelsPath + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(labels, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, labelsPath);
+    fs.linkSync(tmpPath, labelsPath);
   } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      return NextResponse.json({ error: 'Labels for this round were already submitted' }, { status: 409 });
+    }
     return NextResponse.json({ error: `Failed to write labels: ${toErrorMessage(err)}` }, { status: 500 });
+  } finally {
+    fs.rmSync(tmpPath, { force: true });
   }
 
   return NextResponse.json({ ok: true, labels }, { status: 201 });

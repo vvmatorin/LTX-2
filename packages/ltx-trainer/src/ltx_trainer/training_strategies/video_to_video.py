@@ -20,6 +20,8 @@ from ltx_trainer.training_strategies.base_strategy import (
     ModelInputs,
     TrainingStrategy,
     TrainingStrategyConfigBase,
+    create_per_token_timesteps,
+    get_video_positions,
 )
 
 
@@ -222,15 +224,16 @@ class VideoToVideoStrategy(TrainingStrategy):
         combined_latents = torch.cat([ref_latents, noisy_target], dim=1) if has_ref else noisy_target
 
         # Create per-token timesteps
-        timesteps = self._create_per_token_timesteps(conditioning_mask, sigmas.squeeze())
+        timesteps = create_per_token_timesteps(conditioning_mask, sigmas.squeeze())
 
         # Generate target positions
-        target_positions = self._get_video_positions(
+        target_positions = get_video_positions(
             num_frames=num_frames,
             height=height,
             width=width,
             batch_size=batch_size,
             fps=fps,
+            scale_factors=self.video_scale_factors,
             device=device,
             dtype=torch.float32,
         )
@@ -238,12 +241,13 @@ class VideoToVideoStrategy(TrainingStrategy):
         positions = target_positions
         if has_ref:
             # Generate reference positions and concatenate before the target's
-            ref_positions = self._get_video_positions(
+            ref_positions = get_video_positions(
                 num_frames=ref_frames,
                 height=ref_height,
                 width=ref_width,
                 batch_size=batch_size,
                 fps=fps,
+                scale_factors=self.video_scale_factors,
                 device=device,
                 dtype=torch.float32,
             )

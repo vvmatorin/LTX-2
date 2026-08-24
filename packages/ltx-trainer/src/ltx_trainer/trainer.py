@@ -1,6 +1,7 @@
 import os
 import random
 import re
+import shutil
 import time
 import warnings
 from pathlib import Path
@@ -30,7 +31,7 @@ from torch.optim.lr_scheduler import (
 from torch.utils.data import DataLoader
 from torchvision.transforms import functional as F  # noqa: N812
 
-from ltx_core.text_encoders.gemma import convert_to_additive_mask
+from ltx_core.text_encoders.gemma import LTXGemmaTextEncoder, convert_to_additive_mask
 from ltx_trainer import dpo, logger
 from ltx_trainer.config import LtxTrainerConfig
 from ltx_trainer.config_display import print_config
@@ -53,7 +54,7 @@ from ltx_trainer.timestep_samplers import SAMPLERS
 from ltx_trainer.training_state import ConfigFingerprint, RngStates, TrainingState
 from ltx_trainer.training_strategies import get_training_strategy
 from ltx_trainer.utils import open_image_as_srgb, save_image
-from ltx_trainer.validation_runner import GenerationConfig, PromptEmbeddings, ValidationSampler
+from ltx_trainer.validation_runner import GenerationConfig, PromptEmbeddings, SampleOutput, ValidationSampler
 from ltx_trainer.video_utils import read_video, save_video
 
 # Disable irrelevant warnings from transformers
@@ -170,17 +171,6 @@ class LtxvTrainer:
         else:
             logger.info("🚀 Starting training...")
 
-        # Restore Live-DPO pairs and their reference snapshot.
-        if cfg.dpo and initial_step > 0:
-            latest_round = dpo.latest_round_with_labels(cfg.output_dir)
-            if latest_round is not None:
-                try:
-                    param_names = {name for name, _ in self._named_trainable_params()}
-                    count = self._dpo.restore(latest_round, cfg.output_dir, param_names)
-                    logger.info(f"Restored {count} Live-DPO pair(s) from {latest_round.name}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Could not restore Live-DPO state from {latest_round.name}: {e}")
-
         # Create progress tracking (disabled for non-main processes or when explicitly disabled)
         progress_enabled = IS_MAIN_PROCESS and not disable_progress_bars
         progress = TrainingProgress(
@@ -223,13 +213,13 @@ class LtxvTrainer:
 
                     loss, last_sigmas = self._training_step(batch)
 
-                    # Detached zero leaf: backward contributes no gradient for this batch,
-                    # instead of a non-finite loss poisoning the optimizer moments.
+                    # A non-finite loss backwards as-is: masking it locally cannot stop
+                    # non-finite intermediates from reaching the gradients (0 * nan = nan)
+                    # and a rank-local fallback desyncs the DDP reducer. Instead, the
+                    # gradients all-reduce identically on every rank and the post-sync
+                    # grad-norm check below skips the optimizer step.
                     if not torch.isfinite(loss).all():
-                        logger.warning(
-                            f"Non-finite loss at global step {self._global_step}; skipping batch gradient."
-                        )
-                        loss = torch.zeros_like(loss).requires_grad_(True)
+                        logger.warning(f"Non-finite loss at global step {self._global_step}.")
                     self._accelerator.backward(loss.mean())
 
                     # Live-DPO combined step: inside a DPO window, blend one labeled pair's
@@ -245,10 +235,20 @@ class LtxvTrainer:
                         self._blend_dpo_gradient()
 
                     grad_norm = None
-                    if self._accelerator.sync_gradients and cfg.optimization.max_grad_norm > 0:
+                    if self._accelerator.sync_gradients:
+                        # Computed even with clipping disabled (max_norm=inf clips nothing):
+                        # the synced norm doubles as the non-finite gradient check, and every
+                        # rank reaches the same verdict on the same all-reduced gradients.
                         grad_norm = self._accelerator.clip_grad_norm_(
                             self._trainable_params,
-                            cfg.optimization.max_grad_norm,
+                            cfg.optimization.max_grad_norm if cfg.optimization.max_grad_norm > 0 else float("inf"),
+                        )
+
+                    skip_step = grad_norm is not None and not bool(torch.isfinite(grad_norm))
+                    if skip_step:
+                        logger.warning(
+                            f"Non-finite gradient norm at global step {self._global_step}; "
+                            "skipping optimizer step."
                         )
 
                     if IS_MAIN_PROCESS and grad_norm is not None:
@@ -267,14 +267,17 @@ class LtxvTrainer:
                                         global_step=self._global_step,
                                     )
 
-                    self._optimizer.step()
+                    if not skip_step:
+                        self._optimizer.step()
 
                     noise_params = []
-                    if is_optimization_step and self._weight_noise_active():
+                    if is_optimization_step and not skip_step and self._weight_noise_active():
                         noise_params = self._params_with_grad()
 
                     self._optimizer.zero_grad()
 
+                    # Stepped even on a skipped step so the LR schedule stays aligned
+                    # with global_step (and identical across ranks).
                     if self._lr_scheduler is not None:
                         self._lr_scheduler.step()
 
@@ -283,12 +286,13 @@ class LtxvTrainer:
                     # forward, and DDP's forward hooks can trigger implicit NCCL ops even
                     # under torch.no_grad(). Only rank 0 saves outputs (guarded inside
                     # _sample_videos).
-                    if (
+                    is_validation_step = bool(
                         cfg.validation.interval
                         and self._global_step > 0
                         and self._global_step % cfg.validation.interval == 0
                         and is_optimization_step
-                    ):
+                    )
+                    if is_validation_step:
                         self._transformer.eval()
                         try:
                             sampled_videos_paths = self._sample_videos(progress)
@@ -363,14 +367,9 @@ class LtxvTrainer:
 
                 # Live-DPO labeling round (following the validation cadence): halts
                 # training until labels arrive, then the labeled pairs feed the combined
-                # SFT+DPO steps until the next round.
-                if (
-                    cfg.dpo
-                    and is_optimization_step
-                    and self._global_step > 0
-                    and cfg.validation.interval
-                    and self._global_step % cfg.validation.interval == 0
-                ):
+                # SFT+DPO steps until the next round. Skipped on the final step — there
+                # are no steps left to use the labels.
+                if cfg.dpo and is_validation_step and self._global_step < cfg.optimization.steps:
                     self._transformer.eval()
                     try:
                         self._run_dpo_round(progress)
@@ -579,36 +578,8 @@ class LtxvTrainer:
                         )
                     )
 
-        # Pre-compute Live-DPO prompt embeddings on disk while Gemma is still loaded.
-        # All ranks discover the entries; only the main process encodes and writes
-        # (other ranks read the files back at labeling-round time, after a barrier).
         if self._config.dpo is not None:
-            self._dpo.entries = dpo.discover_entries(self._config.dpo.samples_file)
-            if IS_MAIN_PROCESS:
-                cache_dir = dpo.embeddings_dir(self._config.output_dir)
-                logger.info(f"Pre-computing embeddings for {len(self._dpo.entries)} Live-DPO prompts...")
-                with torch.inference_mode():
-                    for entry in self._dpo.entries:
-                        hidden_states, mask = text_encoder.encode([entry.prompt])[0]
-                        out = self._embeddings_processor.process_hidden_states(hidden_states, mask)
-                        dpo.save_embeddings(
-                            cache_dir,
-                            entry.stem,
-                            {
-                                "video": out.video_encoding.cpu(),
-                                "audio": out.audio_encoding.cpu() if out.audio_encoding is not None else None,
-                            },
-                        )
-                    neg_hs, neg_mask = text_encoder.encode([self._config.validation.negative_prompt])[0]
-                    neg_out = self._embeddings_processor.process_hidden_states(neg_hs, neg_mask)
-                    dpo.save_embeddings(
-                        cache_dir,
-                        dpo.NEGATIVE_EMBEDDINGS_STEM,
-                        {
-                            "video": neg_out.video_encoding.cpu(),
-                            "audio": neg_out.audio_encoding.cpu() if neg_out.audio_encoding is not None else None,
-                        },
-                    )
+            self._cache_dpo_embeddings(text_encoder)
 
         # Cache empty-prompt features for caption dropout while Gemma is still loaded.
         self._empty_caption_features: dict[str, Tensor | None] | None = None
@@ -1186,6 +1157,11 @@ class LtxvTrainer:
             kwargs_handlers=[DistributedDataParallelKwargs(find_unused_parameters=True)],
         )
 
+        # Live-DPO's reference weight swap and gradient blending assume replicated
+        # trainable parameters; FSDP shards them.
+        if self._config.dpo is not None and self._accelerator.distributed_type == DistributedType.FSDP:
+            raise ValueError("Live-DPO is not supported with FSDP. Use DDP or single-GPU training.")
+
         if self._accelerator.num_processes > 1:
             logger.info(
                 f"{self._accelerator.distributed_type.value} distributed training enabled "
@@ -1335,6 +1311,53 @@ class LtxvTrainer:
         unwrapped = self._accelerator.unwrap_model(self._transformer, keep_torch_compile=False)
         return [(name, param) for name, param in unwrapped.named_parameters() if param.requires_grad]
 
+    def _cache_dpo_embeddings(self, text_encoder: LTXGemmaTextEncoder) -> None:
+        """Discover Live-DPO entries and pre-compute their prompt embeddings on disk.
+
+        Runs while Gemma is still loaded. All ranks discover the entries; only the main
+        process encodes and writes (other ranks read the files back at labeling-round
+        time, after a barrier).
+        """
+        self._dpo.entries = dpo.discover_entries(self._config.dpo.samples_file)
+        if not IS_MAIN_PROCESS:
+            return
+
+        cache_dir = dpo.embeddings_dir(self._config.output_dir)
+        logger.info(f"Pre-computing embeddings for {len(self._dpo.entries)} Live-DPO prompts...")
+        with torch.inference_mode():
+            for entry in self._dpo.entries:
+                hidden_states, mask = text_encoder.encode([entry.prompt])[0]
+                out = self._embeddings_processor.process_hidden_states(hidden_states, mask)
+                dpo.save_embeddings(
+                    cache_dir,
+                    entry.stem,
+                    {
+                        "video": out.video_encoding.cpu(),
+                        "audio": out.audio_encoding.cpu() if out.audio_encoding is not None else None,
+                    },
+                )
+            neg_hs, neg_mask = text_encoder.encode([self._config.validation.negative_prompt])[0]
+            neg_out = self._embeddings_processor.process_hidden_states(neg_hs, neg_mask)
+            dpo.save_embeddings(
+                cache_dir,
+                dpo.NEGATIVE_EMBEDDINGS_STEM,
+                {
+                    "video": neg_out.video_encoding.cpu(),
+                    "audio": neg_out.audio_encoding.cpu() if neg_out.audio_encoding is not None else None,
+                },
+            )
+
+    def _warn_if_dpo_window_saturated(self) -> None:
+        """Warn when the combined window is at least as long as the DPO interval — every
+        optimization step would then blend a DPO gradient, which is usually a misconfig
+        (too many pairs * repeats for the interval)."""
+        window = self._dpo.window_steps(self._config.dpo.repeats, self._accelerator.num_processes)
+        if self._dpo.pairs and window >= self._config.dpo.interval:
+            logger.warning(
+                f"⚠️ The combined SFT+DPO window ({window} steps) covers the whole DPO interval "
+                f"({self._config.dpo.interval}): every step will blend a DPO gradient until the next round."
+            )
+
     # Note: Use @torch.no_grad() instead of @torch.inference_mode() to avoid
     # FSDP inplace update errors after validation
     @torch.no_grad()
@@ -1352,10 +1375,12 @@ class LtxvTrainer:
         self._optimizer.zero_grad(set_to_none=True)
         free_gpu_memory()
 
-        # Deterministic per-round sampling so every rank picks the same entries.
+        # Deterministic per-round sampling so every rank picks the same entries and seeds.
+        # Seeds are drawn fresh each round: fixed seeds would source every round's pairs
+        # from the same few initial-noise trajectories.
         rng = random.Random(cfg.seed + self._global_step)
         entries = rng.sample(self._dpo.entries, min(dpo_cfg.num_samples, len(self._dpo.entries)))
-        seeds = [cfg.validation.seed + seed_idx for seed_idx in range(dpo_cfg.num_seeds)]
+        seeds = [rng.randrange(2**31) for _ in range(dpo_cfg.num_seeds)]
         inference_steps = cfg.validation.inference_steps
 
         sampling_ctx = progress.start_sampling(
@@ -1374,13 +1399,20 @@ class LtxvTrainer:
             video_vae_path=resolve_video_vae_path(cfg.model.model_path, cfg.model.video_vae_path),
         )
 
+        # A pre-existing round dir is stale (a previous run crashed or was resumed past
+        # this step): wipe it so its videos — and especially labels submitted for them —
+        # can't be attributed to this round's samples.
         round_path = dpo.round_dir(cfg.output_dir, self._global_step)
         if IS_MAIN_PROCESS:
-            round_path.mkdir(parents=True, exist_ok=True)
+            if round_path.exists():
+                logger.warning(f"Discarding stale DPO round directory: {round_path}")
+                shutil.rmtree(round_path)
+            round_path.mkdir(parents=True)
+        self._accelerator.wait_for_everyone()
 
         # The DPO reference for this round's pairs is the exact policy that generates its
-        # samples: snapshot the trainable LoRA weights to CPU (and to disk, for resume).
-        self._dpo.start_round(self._named_trainable_params(), round_path, save=IS_MAIN_PROCESS)
+        # samples: snapshot the trainable LoRA weights to CPU.
+        self._dpo.start_round(self._named_trainable_params())
 
         width, height, num_frames = cfg.validation.video_dims
         embeddings_cache = dpo.embeddings_dir(cfg.output_dir)
@@ -1411,23 +1443,7 @@ class LtxvTrainer:
             outputs = sampler.generate(config=gen_config, device=self._accelerator.device)
 
             if IS_MAIN_PROCESS:
-                videos, latents = [], []
-                for seed_idx, output in enumerate(outputs):
-                    video_name = f"sample_{sample_idx:02d}_seed_{seed_idx}.mp4"
-                    latent_name = f"sample_{sample_idx:02d}_seed_{seed_idx}.pt"
-                    save_video(
-                        video_tensor=output.video,
-                        output_path=round_path / video_name,
-                        fps=cfg.validation.frame_rate,
-                        audio=output.audio,
-                        audio_sample_rate=self._vocoder.output_sampling_rate if output.audio is not None else None,
-                    )
-                    latent_payload = {"latents": output.latent}
-                    if output.audio_latent is not None:
-                        latent_payload["audio_latents"] = output.audio_latent
-                    torch.save(latent_payload, round_path / latent_name)
-                    videos.append(video_name)
-                    latents.append(latent_name)
+                videos, latents = self._save_dpo_sample_outputs(round_path, sample_idx, outputs)
                 manifest_samples.append(
                     {
                         "index": sample_idx,
@@ -1466,8 +1482,35 @@ class LtxvTrainer:
         count = self._dpo.load_labels(round_path, cfg.output_dir)
         if count:
             logger.info(f"▶ Labels received: resuming with {count} DPO pair(s).")
+            self._warn_if_dpo_window_saturated()
         else:
             logger.info("▶ Labels received: all samples skipped, resuming without DPO runs.")
+
+    def _save_dpo_sample_outputs(
+        self, round_path: Path, sample_idx: int, outputs: list[SampleOutput]
+    ) -> tuple[list[str], list[str]]:
+        """Save one entry's generated videos and final denoised latents into the round dir.
+
+        Returns the (video, latent) filename lists for the round manifest, ordered by seed.
+        """
+        videos, latents = [], []
+        for seed_idx, output in enumerate(outputs):
+            video_name = f"sample_{sample_idx:02d}_seed_{seed_idx}.mp4"
+            latent_name = f"sample_{sample_idx:02d}_seed_{seed_idx}.pt"
+            save_video(
+                video_tensor=output.video,
+                output_path=round_path / video_name,
+                fps=self._config.validation.frame_rate,
+                audio=output.audio,
+                audio_sample_rate=self._vocoder.output_sampling_rate if output.audio is not None else None,
+            )
+            latent_payload = {"latents": output.latent}
+            if output.audio_latent is not None:
+                latent_payload["audio_latents"] = output.audio_latent
+            torch.save(latent_payload, round_path / latent_name)
+            videos.append(video_name)
+            latents.append(latent_name)
+        return videos, latents
 
     def _blend_dpo_gradient(self) -> None:
         """Blend one pair's DPO gradient into the current step's SFT gradient via PCGrad.
@@ -1486,25 +1529,29 @@ class LtxvTrainer:
             param.grad = None
 
         loss, metrics = self._dpo_training_step(pair)
+        metrics["dpo/loss"] = loss.detach().item()
 
-        # Detached zero leaf, mirroring the SFT loop: backward still runs (DDP ranks
-        # must stay in sync) but contributes no gradient.
-        if not torch.isfinite(loss).all():
-            logger.warning(f"Non-finite DPO loss at global step {self._global_step}; skipping pair gradient.")
-            loss = torch.zeros_like(loss).requires_grad_(True)
         # Accelerate divides backward losses by gradient_accumulation_steps; undo it —
         # the DPO loss is applied once per optimization step, not per micro-batch.
+        # A non-finite loss backwards as-is (see the SFT loop): the all-reduced
+        # gradients are identical on every rank, so the check below is too.
         self._accelerator.backward(loss * cfg.optimization.gradient_accumulation_steps)
 
         dpo_grads = [p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p) for p in params]
 
-        combined, surgery_metrics = dpo.pcgrad_combine(sft_grads, dpo_grads)
+        if all(torch.isfinite(g).all() for g in dpo_grads):
+            blended, surgery_metrics = dpo.pcgrad_combine(sft_grads, dpo_grads)
+            metrics.update(surgery_metrics)
+        else:
+            logger.warning(
+                f"Non-finite DPO gradient at global step {self._global_step}; keeping the SFT gradient only."
+            )
+            blended = sft_grads
+
         with torch.no_grad():
-            for param, grad in zip(params, combined, strict=True):
+            for param, grad in zip(params, blended, strict=True):
                 param.grad = grad
 
-        metrics["dpo/loss"] = loss.detach().item()
-        metrics.update(surgery_metrics)
         if IS_MAIN_PROCESS:
             self._log_metrics(metrics)
 
@@ -1532,14 +1579,21 @@ class LtxvTrainer:
                 audio_mse = dpo.masked_per_sample_mse(audio_pred, inputs.audio_targets, inputs.audio_loss_mask)
             return video_mse, audio_mse
 
-        video_pred, audio_pred = self._transformer(video=inputs.video, audio=inputs.audio, perturbations=None)
-        policy_mse, policy_audio_mse = compute_mses(video_pred, audio_pred)
+        # Both forwards run in eval mode (gradients still flow): with LoRA dropout active,
+        # all four velocity MSEs of the margin would carry independent dropout noise, which
+        # beta amplifies inside the sigmoid. Reference DPO implementations disable dropout.
+        self._transformer.eval()
+        try:
+            video_pred, audio_pred = self._transformer(video=inputs.video, audio=inputs.audio, perturbations=None)
+            policy_mse, policy_audio_mse = compute_mses(video_pred, audio_pred)
 
-        with torch.no_grad(), self._dpo.reference_swapped(self._named_trainable_params()):
-            ref_video_pred, ref_audio_pred = self._transformer(
-                video=inputs.video, audio=inputs.audio, perturbations=None
-            )
-            ref_mse, ref_audio_mse = compute_mses(ref_video_pred, ref_audio_pred)
+            with torch.no_grad(), self._dpo.reference_swapped(self._named_trainable_params()):
+                ref_video_pred, ref_audio_pred = self._transformer(
+                    video=inputs.video, audio=inputs.audio, perturbations=None
+                )
+                ref_mse, ref_audio_mse = compute_mses(ref_video_pred, ref_audio_pred)
+        finally:
+            self._transformer.train()
 
         return dpo.flow_dpo_loss(
             policy_mse,
