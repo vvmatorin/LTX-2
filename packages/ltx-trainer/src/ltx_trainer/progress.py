@@ -14,28 +14,31 @@ from rich.progress import (
 
 
 class SamplingContext:
-    """Context for validation sampling progress tracking.
+    """Context for sampling progress tracking (validation and DPO labeling rounds).
     Provides a unified progress display showing current video and denoising step.
-    Display format: "Sampling X/Y [████████████] step Z/W"
-    The progress bar shows the denoising progress for the current video.
+    Display format: "<description> X/Y [████████████] step Z/W"
+    The progress bar shows the denoising progress for the current video. The sampler
+    calls ``advance_video()`` once per generated video (each seed counts as one video),
+    so the caller only sizes the context (``num_videos``, ``num_steps``).
     """
 
-    def __init__(self, progress: Progress | None, task: TaskID | None, num_prompts: int, num_steps: int):
+    def __init__(self, progress: Progress | None, task: TaskID | None, num_videos: int, num_steps: int):
         self._progress = progress
         self._task = task
-        self._num_prompts = num_prompts
+        self._num_videos = num_videos
         self._num_steps = num_steps
+        self._video_idx = 0
 
-    def start_video(self, video_idx: int) -> None:
-        """Start tracking a new video (resets step progress)."""
+    def advance_video(self) -> None:
+        """Advance the video counter by one and reset the step progress."""
+        self._video_idx += 1
         if self._progress is None or self._task is None:
             return
-        # Reset task for new video: completed=0, total=num_steps
         self._progress.reset(self._task, total=self._num_steps)
         self._progress.update(
             self._task,
             completed=0,
-            video=f"{video_idx + 1}/{self._num_prompts}",
+            video=f"{self._video_idx}/{self._num_videos}",
             info=f"step 0/{self._num_steps}",
         )
 
@@ -64,11 +67,10 @@ class TrainingProgress:
                 # ... training step ...
                 progress.update_training(loss=0.1, lr=1e-4, step_time=0.5)
                 if should_validate:
-                    sampling_ctx = progress.start_sampling(num_prompts=3, num_steps=30)
+                    sampling_ctx = progress.start_sampling(num_videos=3, num_steps=30)
                     sampler = ValidationSampler(..., sampling_context=sampling_ctx)
-                    for prompt_idx, prompt in enumerate(prompts):
-                        sampling_ctx.start_video(prompt_idx)
-                        sampler.generate(...)
+                    for prompt in prompts:
+                        sampler.generate(...)  # the sampler advances the video counter
                     sampling_ctx.cleanup()
     """
 
@@ -147,13 +149,14 @@ class TrainingProgress:
         completed = int(self._progress.tasks[self._train_task].completed)
         self._progress.update(self._train_task, video=f"{completed}/{self._total_steps}")
 
-    def start_sampling(self, num_prompts: int, num_steps: int) -> SamplingContext:
-        """Start validation sampling progress tracking.
+    def start_sampling(self, num_videos: int, num_steps: int, description: str = "Sampling") -> SamplingContext:
+        """Start sampling progress tracking.
         Creates a task that shows current video and denoising step progress.
-        Format: "Sampling X/Y [████████████] step Z/W"
+        Format: "<description> X/Y [████████████] step Z/W"
         Args:
-            num_prompts: Number of validation prompts to sample
-            num_steps: Number of denoising steps per sample
+            num_videos: Total number of videos to generate (each seed counts as one)
+            num_steps: Number of denoising steps per video
+            description: Task label shown in front of the bar
         Returns:
             SamplingContext for tracking progress (no-op if progress is disabled)
         """
@@ -162,21 +165,21 @@ class TrainingProgress:
             return SamplingContext(
                 progress=None,
                 task=None,
-                num_prompts=num_prompts,
+                num_videos=num_videos,
                 num_steps=num_steps,
             )
 
         task = self._progress.add_task(
-            "Sampling",
+            description,
             total=num_steps,
             completed=0,
-            video=f"0/{num_prompts}",
+            video=f"0/{num_videos}",
             info=f"step 0/{num_steps}",
         )
 
         return SamplingContext(
             progress=self._progress,
             task=task,
-            num_prompts=num_prompts,
+            num_videos=num_videos,
             num_steps=num_steps,
         )

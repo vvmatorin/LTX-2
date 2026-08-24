@@ -4,7 +4,17 @@ import type { TrainingConfig } from '@/lib/types';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Section, NumberField, TextField, SelectField, SwitchField, ListInput, VideoDimsField } from './fields';
+import {
+  Section,
+  FieldRow,
+  InlineRow,
+  NumberField,
+  TextField,
+  SelectField,
+  SwitchField,
+  ListInput,
+  VideoDimsField,
+} from './fields';
 
 type UpdateFn = (section: keyof TrainingConfig, patch: Record<string, unknown>) => void;
 
@@ -116,53 +126,41 @@ const TARGET_MODULE_PRESETS = [
 export function ModelSection({ config, update }: SectionProps) {
   return (
     <Section title="Model">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="sm:col-span-2">
+      <TextField
+        label="Checkpoint Path"
+        value={config.model.modelPath}
+        onChange={v => update('model', { modelPath: v })}
+        mono
+      />
+      <TextField
+        label="Text Encoder Path"
+        value={config.model.textEncoderPath}
+        onChange={v => update('model', { textEncoderPath: v })}
+        mono
+      />
+      {config.model.modelStream === 'ltx-2.5' && (
+        <>
           <TextField
-            label="Checkpoint Path"
-            value={config.model.modelPath}
-            onChange={v => update('model', { modelPath: v })}
+            label="Video VAE Path"
+            value={config.model.videoVaePath}
+            onChange={v => update('model', { videoVaePath: v })}
             mono
           />
-        </div>
-        <div className="sm:col-span-2">
           <TextField
-            label="Text Encoder Path"
-            value={config.model.textEncoderPath}
-            onChange={v => update('model', { textEncoderPath: v })}
+            label="Audio VAE Path"
+            value={config.model.audioVaePath}
+            onChange={v => update('model', { audioVaePath: v })}
             mono
           />
-        </div>
-        {config.model.modelStream === 'ltx-2.5' && (
-          <>
-            <div className="sm:col-span-2">
-              <TextField
-                label="Video VAE Path"
-                value={config.model.videoVaePath}
-                onChange={v => update('model', { videoVaePath: v })}
-                mono
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <TextField
-                label="Audio VAE Path"
-                value={config.model.audioVaePath}
-                onChange={v => update('model', { audioVaePath: v })}
-                mono
-              />
-            </div>
-          </>
-        )}
-        <div className="sm:col-span-2">
-          <TextField
-            label="Load Checkpoint (optional)"
-            value={config.model.loadCheckpoint || ''}
-            onChange={v => update('model', { loadCheckpoint: v || null })}
-            placeholder="None — resume from a previous checkpoint path"
-            mono
-          />
-        </div>
-      </div>
+        </>
+      )}
+      <TextField
+        label="Load Checkpoint (optional)"
+        value={config.model.loadCheckpoint || ''}
+        onChange={v => update('model', { loadCheckpoint: v || null })}
+        placeholder="None — resume from a previous checkpoint path"
+        mono
+      />
     </Section>
   );
 }
@@ -174,7 +172,7 @@ export function LoraSection({ config, update }: SectionProps) {
 
   return (
     <Section title="LoRA">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <FieldRow>
         <NumberField label="Rank" value={config.lora.rank} onChange={v => update('lora', { rank: v })} />
         <NumberField label="Alpha" value={config.lora.alpha} onChange={v => update('lora', { alpha: v })} />
         <NumberField
@@ -183,12 +181,14 @@ export function LoraSection({ config, update }: SectionProps) {
           onChange={v => update('lora', { dropout: v })}
           step={0.01}
         />
-      </div>
-      <SwitchField
-        label="Freeze Extra Modules"
-        checked={config.lora.freezeExtraModules}
-        onChange={v => update('lora', { freezeExtraModules: v })}
-      />
+      </FieldRow>
+      <InlineRow>
+        <SwitchField
+          label="Freeze Extra Modules"
+          checked={config.lora.freezeExtraModules}
+          onChange={v => update('lora', { freezeExtraModules: v })}
+        />
+      </InlineRow>
       <div className="space-y-2">
         <Label className="text-xs">Target Layers</Label>
         <div className="flex flex-wrap gap-2">
@@ -223,7 +223,7 @@ export function StrategySection({ config, update }: SectionProps) {
 
   return (
     <Section title="Training Strategy">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <FieldRow columns={2}>
         <SelectField
           label="Strategy"
           value={config.trainingStrategy.name}
@@ -233,8 +233,8 @@ export function StrategySection({ config, update }: SectionProps) {
             { value: 'video_to_video', label: 'Video to Video (IC-LoRA)' },
           ]}
         />
-      </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      </FieldRow>
+      <FieldRow>
         <NumberField
           label="First Frame Cond. P"
           value={config.trainingStrategy.firstFrameConditioningP}
@@ -266,8 +266,8 @@ export function StrategySection({ config, update }: SectionProps) {
             step={0.05}
           />
         )}
-      </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-2">
+      </FieldRow>
+      <InlineRow>
         {!isV2V && (
           <SwitchField
             label="Audio"
@@ -280,7 +280,7 @@ export function StrategySection({ config, update }: SectionProps) {
           checked={config.trainingStrategy.hFlip}
           onChange={v => update('trainingStrategy', { hFlip: v })}
         />
-      </div>
+      </InlineRow>
     </Section>
   );
 }
@@ -288,7 +288,7 @@ export function StrategySection({ config, update }: SectionProps) {
 export function OptimizationSection({ config, update }: SectionProps) {
   return (
     <Section title="Optimization">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <FieldRow>
         <NumberField
           label="Learning Rate"
           value={config.optimization.learningRate}
@@ -349,8 +349,8 @@ export function OptimizationSection({ config, update }: SectionProps) {
             { value: 'lambda_warmup', label: 'Lambda Warmup' },
           ]}
         />
-      </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      </FieldRow>
+      <FieldRow>
         <SelectField
           label="Weight Noise"
           value={config.optimization.weightNoise.mode}
@@ -370,8 +370,8 @@ export function OptimizationSection({ config, update }: SectionProps) {
             mono
           />
         )}
-      </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      </FieldRow>
+      <InlineRow>
         <SwitchField
           label="Gradient Checkpointing"
           checked={config.optimization.enableGradientCheckpointing}
@@ -386,7 +386,7 @@ export function OptimizationSection({ config, update }: SectionProps) {
             mono
           />
         )}
-      </div>
+      </InlineRow>
     </Section>
   );
 }
@@ -396,85 +396,83 @@ export function ValidationSection({ config, update }: SectionProps) {
 
   return (
     <Section title="Validation" defaultOpen={false}>
-      <div className="space-y-4">
-        <div className="space-y-2">
-          <Label className="text-xs">Prompts (one per line)</Label>
-          <ListInput
-            value={config.validation.prompts}
-            onChange={v => update('validation', { prompts: v })}
-            placeholder="A serene mountain lake at sunrise..."
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="text-xs">Conditioning Images (one path per line)</Label>
-          <ListInput
-            value={config.validation.images}
-            onChange={v => update('validation', { images: v })}
-            placeholder="/path/to/image.jpeg"
-          />
-        </div>
-        {isV2V && (
-          <>
-            <div className="space-y-2">
-              <Label className="text-xs">Reference Videos (one path per line, must match prompt count)</Label>
-              <ListInput
-                value={config.validation.referenceVideos}
-                onChange={v => update('validation', { referenceVideos: v })}
-                placeholder="/path/to/reference.mp4"
-              />
-            </div>
-            <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
-              <NumberField
-                label="Reference Downscale Factor"
-                value={config.validation.referenceDownscaleFactor}
-                onChange={v => update('validation', { referenceDownscaleFactor: Math.max(1, Math.round(v)) })}
-              />
-              <SwitchField
-                label="Include Reference in Output (side-by-side)"
-                checked={config.validation.includeReferenceInOutput}
-                onChange={v => update('validation', { includeReferenceInOutput: v })}
-              />
-            </div>
-          </>
-        )}
-        <TextField
-          label="Negative Prompt"
-          value={config.validation.negativePrompt}
-          onChange={v => update('validation', { negativePrompt: v })}
+      <div className="space-y-2">
+        <Label className="text-xs">Prompts (one per line)</Label>
+        <ListInput
+          value={config.validation.prompts}
+          onChange={v => update('validation', { prompts: v })}
+          placeholder="A serene mountain lake at sunrise..."
         />
-        <VideoDimsField value={config.validation.videoDims} onChange={v => update('validation', { videoDims: v })} />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <NumberField
-            label="Inference Steps"
-            value={config.validation.inferenceSteps}
-            onChange={v => update('validation', { inferenceSteps: v })}
-          />
-          <NumberField
-            label="Interval"
-            value={config.validation.interval}
-            onChange={v => update('validation', { interval: v })}
-          />
-          <NumberField
-            label="Guidance Scale"
-            value={config.validation.guidanceScale}
-            onChange={v => update('validation', { guidanceScale: v })}
-            step={0.5}
-          />
-          <NumberField label="Seed" value={config.validation.seed} onChange={v => update('validation', { seed: v })} />
-        </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-2">
-          <SwitchField
-            label="Generate Audio"
-            checked={config.validation.generateAudio}
-            onChange={v => update('validation', { generateAudio: v })}
-          />
-          <SwitchField
-            label="Skip Initial Validation"
-            checked={config.validation.skipInitialValidation}
-            onChange={v => update('validation', { skipInitialValidation: v })}
-          />
-        </div>
       </div>
+      <div className="space-y-2">
+        <Label className="text-xs">Conditioning Images (one path per line)</Label>
+        <ListInput
+          value={config.validation.images}
+          onChange={v => update('validation', { images: v })}
+          placeholder="/path/to/image.jpeg"
+        />
+      </div>
+      {isV2V && (
+        <>
+          <div className="space-y-2">
+            <Label className="text-xs">Reference Videos (one path per line, must match prompt count)</Label>
+            <ListInput
+              value={config.validation.referenceVideos}
+              onChange={v => update('validation', { referenceVideos: v })}
+              placeholder="/path/to/reference.mp4"
+            />
+          </div>
+          <InlineRow>
+            <NumberField
+              label="Reference Downscale Factor"
+              value={config.validation.referenceDownscaleFactor}
+              onChange={v => update('validation', { referenceDownscaleFactor: Math.max(1, Math.round(v)) })}
+            />
+            <SwitchField
+              label="Include Reference in Output (side-by-side)"
+              checked={config.validation.includeReferenceInOutput}
+              onChange={v => update('validation', { includeReferenceInOutput: v })}
+            />
+          </InlineRow>
+        </>
+      )}
+      <TextField
+        label="Negative Prompt"
+        value={config.validation.negativePrompt}
+        onChange={v => update('validation', { negativePrompt: v })}
+      />
+      <VideoDimsField value={config.validation.videoDims} onChange={v => update('validation', { videoDims: v })} />
+      <FieldRow columns={4}>
+        <NumberField
+          label="Inference Steps"
+          value={config.validation.inferenceSteps}
+          onChange={v => update('validation', { inferenceSteps: v })}
+        />
+        <NumberField
+          label="Interval"
+          value={config.validation.interval}
+          onChange={v => update('validation', { interval: v })}
+        />
+        <NumberField
+          label="Guidance Scale"
+          value={config.validation.guidanceScale}
+          onChange={v => update('validation', { guidanceScale: v })}
+          step={0.5}
+        />
+        <NumberField label="Seed" value={config.validation.seed} onChange={v => update('validation', { seed: v })} />
+      </FieldRow>
+      <InlineRow>
+        <SwitchField
+          label="Generate Audio"
+          checked={config.validation.generateAudio}
+          onChange={v => update('validation', { generateAudio: v })}
+        />
+        <SwitchField
+          label="Skip Initial Validation"
+          checked={config.validation.skipInitialValidation}
+          onChange={v => update('validation', { skipInitialValidation: v })}
+        />
+      </InlineRow>
     </Section>
   );
 }
@@ -484,69 +482,64 @@ export function DpoSection({ config, update }: SectionProps) {
 
   return (
     <Section title="Live-DPO" defaultOpen={false}>
-      <div className="space-y-4">
+      <InlineRow>
         <SwitchField label="Enabled" checked={config.dpo.enabled} onChange={v => update('dpo', { enabled: v })} />
-        {config.dpo.enabled && unsupported && (
-          <p className="text-destructive text-xs">
-            Live-DPO requires LoRA training mode and the text_to_video strategy.
-          </p>
-        )}
         {config.dpo.enabled && (
-          <>
-            <TextField
-              label="Samples File (dataset .json: caption + media_path)"
-              value={config.dpo.samplesFile}
-              onChange={v => update('dpo', { samplesFile: v })}
-              placeholder="/path/to/dpo-samples.json"
-              mono
-            />
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-              <NumberField
-                label="Samples per Round"
-                value={config.dpo.numSamples}
-                onChange={v => update('dpo', { numSamples: Math.max(1, Math.round(v)) })}
-              />
-              <NumberField
-                label="Seeds per Sample"
-                value={config.dpo.numSeeds}
-                onChange={v => update('dpo', { numSeeds: Math.max(2, Math.round(v)) })}
-              />
-              <NumberField
-                label="DPO Interval (steps)"
-                value={config.dpo.interval}
-                onChange={v => update('dpo', { interval: Math.max(1, Math.round(v)) })}
-              />
-              <NumberField
-                label="Repeats per Run"
-                value={config.dpo.repeats}
-                onChange={v => update('dpo', { repeats: Math.max(1, Math.round(v)) })}
-              />
-              <NumberField label="Beta" value={config.dpo.beta} onChange={v => update('dpo', { beta: v })} step={100} />
-            </div>
-            <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
-              <SwitchField
-                label="Generate Audio (video cross-attends to audio)"
-                checked={config.dpo.generateAudio}
-                onChange={v => update('dpo', { generateAudio: v, ...(v ? {} : { audioLossWeight: 0 }) })}
-              />
-              {config.dpo.generateAudio && (
-                <NumberField
-                  label="Audio Loss Weight (0 = video-only preferences)"
-                  value={config.dpo.audioLossWeight}
-                  onChange={v => update('dpo', { audioLossWeight: Math.max(0, v) })}
-                  step={0.05}
-                />
-              )}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              At every validation interval, training renders the configured seeds for randomly sampled entries and halts
-              until best/worst labels are submitted from the Runs page. Labeled pairs are then blended into regular
-              training steps (with gradient surgery against the SFT objective) in short windows at each DPO interval,
-              each pair used the configured number of repeats, until the next labeling round.
-            </p>
-          </>
+          <TextField
+            label="Samples File"
+            value={config.dpo.samplesFile}
+            onChange={v => update('dpo', { samplesFile: v })}
+            placeholder="/path/to/dpo/dataset.json"
+            className="min-w-64 flex-1"
+            mono
+          />
         )}
-      </div>
+      </InlineRow>
+      {config.dpo.enabled && unsupported && (
+        <p className="text-destructive text-xs">Live-DPO requires LoRA training mode and the text_to_video strategy.</p>
+      )}
+      {config.dpo.enabled && (
+        <>
+          <FieldRow columns={5}>
+            <NumberField
+              label="Num. samples"
+              value={config.dpo.numSamples}
+              onChange={v => update('dpo', { numSamples: Math.max(1, Math.round(v)) })}
+            />
+            <NumberField
+              label="Num. seeds"
+              value={config.dpo.numSeeds}
+              onChange={v => update('dpo', { numSeeds: Math.max(2, Math.round(v)) })}
+            />
+            <NumberField
+              label="Interval"
+              value={config.dpo.interval}
+              onChange={v => update('dpo', { interval: Math.max(1, Math.round(v)) })}
+            />
+            <NumberField
+              label="Repeats"
+              value={config.dpo.repeats}
+              onChange={v => update('dpo', { repeats: Math.max(1, Math.round(v)) })}
+            />
+            <NumberField label="Beta" value={config.dpo.beta} onChange={v => update('dpo', { beta: v })} step={100} />
+          </FieldRow>
+          <InlineRow>
+            <SwitchField
+              label="Generate Audio"
+              checked={config.dpo.generateAudio}
+              onChange={v => update('dpo', { generateAudio: v, ...(v ? {} : { audioLossWeight: 0 }) })}
+            />
+            {config.dpo.generateAudio && (
+              <NumberField
+                label="Audio Loss Weight"
+                value={config.dpo.audioLossWeight}
+                onChange={v => update('dpo', { audioLossWeight: Math.max(0, v) })}
+                step={0.05}
+              />
+            )}
+          </InlineRow>
+        </>
+      )}
     </Section>
   );
 }
@@ -554,7 +547,7 @@ export function DpoSection({ config, update }: SectionProps) {
 export function CheckpointsSection({ config, update }: SectionProps) {
   return (
     <Section title="Checkpoints" defaultOpen={false}>
-      <div className="grid grid-cols-2 gap-4">
+      <FieldRow columns={2}>
         <NumberField
           label="Save Interval"
           value={config.checkpoints.interval}
@@ -585,12 +578,14 @@ export function CheckpointsSection({ config, update }: SectionProps) {
             { value: 'off', label: 'Off' },
           ]}
         />
-      </div>
-      <SwitchField
-        label="Resume training state from the loaded checkpoint"
-        checked={config.checkpoints.resume}
-        onChange={v => update('checkpoints', { resume: v })}
-      />
+      </FieldRow>
+      <InlineRow>
+        <SwitchField
+          label="Resume training state from the loaded checkpoint"
+          checked={config.checkpoints.resume}
+          onChange={v => update('checkpoints', { resume: v })}
+        />
+      </InlineRow>
     </Section>
   );
 }
@@ -598,7 +593,7 @@ export function CheckpointsSection({ config, update }: SectionProps) {
 export function FlowMatchingSection({ config, update }: SectionProps) {
   return (
     <Section title="Flow Matching">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <FieldRow>
         <SelectField
           label="Timestep Sampling"
           value={config.flowMatching.timestepSamplingMode}
@@ -626,7 +621,7 @@ export function FlowMatchingSection({ config, update }: SectionProps) {
             step={0.5}
           />
         )}
-      </div>
+      </FieldRow>
     </Section>
   );
 }
@@ -634,7 +629,7 @@ export function FlowMatchingSection({ config, update }: SectionProps) {
 export function GeneralSection({ config, onChange }: GeneralSectionProps) {
   return (
     <Section title="General" defaultOpen={false}>
-      <div className="grid grid-cols-2 gap-4">
+      <FieldRow columns={2}>
         <TextField
           label="Output Directory"
           value={config.outputDir}
@@ -642,7 +637,7 @@ export function GeneralSection({ config, onChange }: GeneralSectionProps) {
           mono
         />
         <NumberField label="Seed" value={config.seed} onChange={v => onChange({ ...config, seed: v })} />
-      </div>
+      </FieldRow>
     </Section>
   );
 }

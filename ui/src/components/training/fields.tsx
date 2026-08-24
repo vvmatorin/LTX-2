@@ -46,6 +46,30 @@ export function Section({
   );
 }
 
+// Tailwind resolves class names statically, so the sm: variants are enumerated.
+const SM_GRID_COLS = {
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-3',
+  4: 'sm:grid-cols-4',
+  5: 'sm:grid-cols-5',
+} as const;
+
+/** A row of equal-width fields: 2 columns on mobile, `columns` from the sm breakpoint up. */
+export function FieldRow({
+  columns = 3,
+  children,
+}: {
+  columns?: keyof typeof SM_GRID_COLS;
+  children: React.ReactNode;
+}) {
+  return <div className={cn('grid grid-cols-2 gap-4', SM_GRID_COLS[columns])}>{children}</div>;
+}
+
+/** A row of content-width items (switches and their dependent fields), wrapping on overflow. */
+export function InlineRow({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap items-end gap-x-6 gap-y-2">{children}</div>;
+}
+
 export function NumberField({
   label,
   value,
@@ -100,15 +124,17 @@ export function TextField({
   onChange,
   placeholder,
   mono,
+  className,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   mono?: boolean;
+  className?: string;
 }) {
   return (
-    <div className="space-y-2">
+    <div className={cn('space-y-2', className)}>
       <Label className="text-xs">{label}</Label>
       <Input
         value={value}

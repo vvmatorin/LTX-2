@@ -249,6 +249,8 @@ class ValidationSampler:
         video_latents: list[Tensor] = []
         audio_latents: list[Tensor] = []
         for seed in config.resolved_seeds:
+            if self._sampling_context is not None:
+                self._sampling_context.advance_video()
             generator = torch.Generator(device=device).manual_seed(seed)
 
             # Create initial states
@@ -369,6 +371,8 @@ class ValidationSampler:
         audio_state = noiser(latent_state=audio_clean, noise_scale=1.0) if audio_clean else None
 
         # Run denoising loop
+        if self._sampling_context is not None:
+            self._sampling_context.advance_video()
         combined_state, audio_state = self._run_denoising(
             config=config,
             video_state=combined_state,

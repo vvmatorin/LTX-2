@@ -1209,7 +1209,7 @@ class LtxvTrainer:
 
         # Start sampling progress tracking
         sampling_ctx = progress.start_sampling(
-            num_prompts=len(self._config.validation.prompts),
+            num_videos=len(self._config.validation.prompts),
             num_steps=inference_steps,
         )
 
@@ -1233,9 +1233,6 @@ class LtxvTrainer:
         width, height, num_frames = self._config.validation.video_dims
 
         for prompt_idx, prompt in enumerate(self._config.validation.prompts):
-            # Update progress to show current video
-            sampling_ctx.start_video(prompt_idx)
-
             # Load conditioning image if provided
             condition_image = None
             if use_images:
@@ -1384,8 +1381,9 @@ class LtxvTrainer:
         inference_steps = cfg.validation.inference_steps
 
         sampling_ctx = progress.start_sampling(
-            num_prompts=len(entries),
-            num_steps=inference_steps * dpo_cfg.num_seeds,
+            num_videos=len(entries) * dpo_cfg.num_seeds,
+            num_steps=inference_steps,
+            description="DPO round",
         )
         sampler = ValidationSampler(
             transformer=self._transformer,
@@ -1419,8 +1417,6 @@ class LtxvTrainer:
 
         manifest_samples = []
         for sample_idx, entry in enumerate(entries):
-            sampling_ctx.start_video(sample_idx)
-
             condition_image = None
             if entry.image_path is not None:
                 condition_image = F.to_tensor(open_image_as_srgb(entry.image_path))
