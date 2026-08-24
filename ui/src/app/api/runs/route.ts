@@ -33,6 +33,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Failed to create output directory: ${toErrorMessage(err)}` }, { status: 500 });
   }
 
+  if (uiConfig.dpo?.enabled) {
+    const samplesDir = uiConfig.dpo.samplesDir?.trim();
+    if (!samplesDir || !fs.existsSync(samplesDir)) {
+      return NextResponse.json({ error: `Live-DPO samples directory does not exist: ${samplesDir}` }, { status: 400 });
+    }
+  }
+
   let preprocessedDataRoot: string | null = null;
   const dataset = db.select().from(trainingDatasets).where(eq(trainingDatasets.name, datasetName)).get();
   if (dataset) {
@@ -179,6 +186,21 @@ function buildYamlConfig(uiConfig: TrainingConfig, preprocessedDataRoot: string 
       generate_audio: uiConfig.validation.generateAudio,
       skip_initial_validation: uiConfig.validation.skipInitialValidation,
     },
+    dpo: uiConfig.dpo?.enabled
+      ? {
+          samples_dir: uiConfig.dpo.samplesDir,
+          num_samples: uiConfig.dpo.numSamples,
+          num_seeds: uiConfig.dpo.numSeeds,
+          interval: uiConfig.dpo.interval,
+          run_interval: uiConfig.dpo.runInterval,
+          steps_per_run: uiConfig.dpo.stepsPerRun,
+          beta: uiConfig.dpo.beta,
+          generate_audio: uiConfig.dpo.generateAudio,
+          audio_loss_weight: uiConfig.dpo.audioLossWeight,
+          learning_rate: uiConfig.dpo.learningRate ?? null,
+          inference_steps: uiConfig.dpo.inferenceSteps ?? null,
+        }
+      : undefined,
     checkpoints: {
       interval: uiConfig.checkpoints.interval,
       keep_last_n: uiConfig.checkpoints.keepLastN,

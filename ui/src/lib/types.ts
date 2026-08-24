@@ -171,6 +171,20 @@ export interface TrainingConfig {
     generateAudio: boolean;
     skipInitialValidation: boolean;
   };
+  dpo: {
+    enabled: boolean;
+    samplesDir: string;
+    numSamples: number;
+    numSeeds: number;
+    interval: number;
+    runInterval: number;
+    stepsPerRun: number;
+    beta: number;
+    generateAudio: boolean;
+    audioLossWeight: number;
+    learningRate: number | null;
+    inferenceSteps: number | null;
+  };
   checkpoints: {
     interval: number;
     keepLastN: number;
@@ -180,6 +194,44 @@ export interface TrainingConfig {
   };
   outputDir: string;
   seed: number;
+}
+
+export interface DpoManifestSample {
+  index: number;
+  stem: string;
+  prompt: string;
+  image: boolean;
+  seeds: number[];
+  videos: string[];
+  latents: string[];
+}
+
+export interface DpoManifest {
+  step: number;
+  created_at?: string;
+  num_seeds: number;
+  video_dims?: [number, number, number];
+  with_audio?: boolean;
+  samples: DpoManifestSample[];
+}
+
+export interface DpoChoice {
+  index: number;
+  best?: number | null;
+  worst?: number | null;
+  skipped?: boolean;
+}
+
+export interface DpoLabels {
+  submitted_at: string;
+  choices: DpoChoice[];
+}
+
+export interface DpoRound {
+  step: number;
+  dir: string;
+  pending: DpoManifest;
+  labels: DpoLabels | null;
 }
 
 export interface AppSettings {

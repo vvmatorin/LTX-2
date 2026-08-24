@@ -112,6 +112,16 @@ function TrainingPageInner() {
         return;
       }
     }
+    if (config.dpo.enabled) {
+      if (config.model.trainingMode !== 'lora' || config.trainingStrategy.name !== 'text_to_video') {
+        setStartError('Live-DPO requires LoRA training mode and the text_to_video strategy.');
+        return;
+      }
+      if (!config.dpo.samplesDir.trim()) {
+        setStartError('Live-DPO requires a samples directory (.txt prompts, optional same-stem images).');
+        return;
+      }
+    }
     const outputName = `[${config.model.modelStream}] Train: ${config.outputDir.replace(/\/$/, '') || 'training-run'}`;
     try {
       await createRun({

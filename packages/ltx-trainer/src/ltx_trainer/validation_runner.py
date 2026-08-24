@@ -94,6 +94,16 @@ class TiledDecodingConfig:
 
 
 @dataclass
+class SampleOutput:
+    """One generated sample."""
+
+    video: Tensor  # [C, F, H, W] float32 CPU tensor in [0, 1]
+    audio: Tensor | None  # [C, samples] waveform, or None
+    latent: Tensor  # Final denoised video latent [C, F, H, W], bfloat16 CPU tensor
+    audio_latent: Tensor | None = None  # Final denoised audio latent [C, T, mel_bins], bfloat16 CPU tensor
+
+
+@dataclass
 class GenerationConfig:
     """Configuration for video/audio generation."""
 
@@ -106,6 +116,10 @@ class GenerationConfig:
     num_inference_steps: int = 30  # Number of denoising steps
     guidance_scale: float = 4.0  # CFG guidance scale
     seed: int = 42  # Random seed for reproducibility
+    # When set, one sample per seed is generated sequentially in a single call, sharing
+    # the per-call costs (prompt embeddings, conditioning-image encode, VAE transfers)
+    # across all seeds. `seed` is ignored.
+    seeds: list[int] | None = None
     condition_image: Tensor | None = None  # Optional first frame image for image-to-video
     reference_video: Tensor | None = None  # For IC-LoRA: [F, C, H, W] in [0, 1]
     reference_downscale_factor: int = 1  # For IC-LoRA: downscale factor (1 = same resolution, 2 = half resolution)
@@ -126,6 +140,10 @@ class GenerationConfig:
         elif self.tiled_decoding is False:
             # Explicitly disabled - use config with enabled=False
             object.__setattr__(self, "tiled_decoding", TiledDecodingConfig(enabled=False))
+
+    @property
+    def resolved_seeds(self) -> list[int]:
+        return self.seeds if self.seeds else [self.seed]
 
 
 class ValidationSampler:
@@ -197,15 +215,12 @@ class ValidationSampler:
         self,
         config: GenerationConfig,
         device: torch.device | str = "cuda",
-    ) -> tuple[Tensor, Tensor | None]:
-        """Generate a video (and optionally audio) sample.
-        Args:
-            config: Generation configuration
-            device: Device to run generation on
-        Returns:
-            Tuple of:
-                - video: Video tensor [C, F, H, W] in [0, 1] (float32)
-                - audio: Audio waveform tensor [C, samples] or None
+    ) -> list[SampleOutput]:
+        """Generate one sample per seed (see ``GenerationConfig.seeds``; defaults to one sample).
+
+        Seeds run sequentially (batch size stays 1), but per-call costs are paid once:
+        prompt embeddings, the conditioning-image encode, and the VAE decoder/vocoder
+        transfers are shared across all seeds.
         """
         device = torch.device(device) if isinstance(device, str) else device
         self._validate_config(config)
@@ -215,57 +230,79 @@ class ValidationSampler:
             return self._generate_with_reference(config, device)
         return self._generate_standard(config, device)
 
-    def _generate_standard(self, config: GenerationConfig, device: torch.device) -> tuple[Tensor, Tensor | None]:
-        """Standard generation (text-to-video or image-to-video)."""
+    def _generate_standard(self, config: GenerationConfig, device: torch.device) -> list[SampleOutput]:
+        """Standard generation (text-to-video or image-to-video), sequential over seeds."""
         # Get prompt embeddings (from cache or encode on-the-fly)
         embeddings = self._get_prompt_embeddings(config, device)
-
-        # Setup generator
-        generator = torch.Generator(device=device).manual_seed(config.seed)
 
         # Create latent tools
         video_tools = self._create_video_latent_tools(config)
         audio_tools = self._create_audio_latent_tools(config) if config.generate_audio else None
 
-        # Create initial states
-        video_clean = video_tools.create_initial_state(device=device, dtype=torch.bfloat16)
-        audio_clean = audio_tools.create_initial_state(device=device, dtype=torch.bfloat16) if audio_tools else None
-
-        # Apply image conditioning if provided
+        # Encode the conditioning image once; it is identical for every seed
+        encoded_image = None
         if config.condition_image is not None:
-            video_clean = self._apply_image_conditioning(video_clean, config.condition_image, config, device)
+            encoded_image = self._encode_conditioning_image(
+                config.condition_image, config.height, config.width, device
+            )
 
-        # Add noise
-        noiser = GaussianNoiser(generator=generator)
-        video_state = noiser(latent_state=video_clean, noise_scale=1.0)
-        audio_state = noiser(latent_state=audio_clean, noise_scale=1.0) if audio_clean else None
+        video_latents: list[Tensor] = []
+        audio_latents: list[Tensor] = []
+        for seed in config.resolved_seeds:
+            generator = torch.Generator(device=device).manual_seed(seed)
 
-        # Run denoising loop
-        video_state, audio_state = self._run_denoising(
-            config=config,
-            video_state=video_state,
-            audio_state=audio_state,
-            video_clean=video_clean,
-            audio_clean=audio_clean,
-            embeddings=embeddings,
-            num_target_tokens=video_tools.patchifier.get_token_count(video_tools.target_shape),
-            device=device,
+            # Create initial states
+            video_clean = video_tools.create_initial_state(device=device, dtype=torch.bfloat16)
+            audio_clean = (
+                audio_tools.create_initial_state(device=device, dtype=torch.bfloat16) if audio_tools else None
+            )
+
+            if encoded_image is not None:
+                video_clean = self._apply_image_conditioning(video_clean, encoded_image)
+
+            # Add noise
+            noiser = GaussianNoiser(generator=generator)
+            video_state = noiser(latent_state=video_clean, noise_scale=1.0)
+            audio_state = noiser(latent_state=audio_clean, noise_scale=1.0) if audio_clean else None
+
+            # Run denoising loop
+            video_state, audio_state = self._run_denoising(
+                config=config,
+                video_state=video_state,
+                audio_state=audio_state,
+                video_clean=video_clean,
+                audio_clean=audio_clean,
+                embeddings=embeddings,
+                num_target_tokens=video_tools.patchifier.get_token_count(video_tools.target_shape),
+                device=device,
+            )
+
+            video_state = video_tools.clear_conditioning(video_state)
+            video_state = video_tools.unpatchify(video_state)
+            video_latents.append(video_state.latent.to(torch.bfloat16))
+
+            if audio_state is not None and audio_tools is not None:
+                audio_state = audio_tools.clear_conditioning(audio_state)
+                audio_state = audio_tools.unpatchify(audio_state)
+                audio_latents.append(audio_state.latent.to(torch.bfloat16))
+
+        # Decode all seeds' outputs with a single VAE decoder (and vocoder) transfer
+        videos = self._decode_video_rows(video_latents, device, config.tiled_decoding)
+        audios: list[Tensor | None] = (
+            self._decode_audio_rows(audio_latents, device) if audio_latents else [None] * len(videos)
         )
 
-        # Decode outputs
-        video_state = video_tools.clear_conditioning(video_state)
-        video_state = video_tools.unpatchify(video_state)
-        video_output = self._decode_video(video_state, device, config.tiled_decoding)
+        return [
+            SampleOutput(
+                video=videos[i],
+                audio=audios[i],
+                latent=video_latents[i][0].cpu(),
+                audio_latent=audio_latents[i][0].cpu() if audio_latents else None,
+            )
+            for i in range(len(videos))
+        ]
 
-        audio_output = None
-        if audio_state is not None and audio_tools is not None:
-            audio_state = audio_tools.clear_conditioning(audio_state)
-            audio_state = audio_tools.unpatchify(audio_state)
-            audio_output = self._decode_audio(audio_state, device)
-
-        return video_output, audio_output
-
-    def _generate_with_reference(self, config: GenerationConfig, device: torch.device) -> tuple[Tensor, Tensor | None]:
+    def _generate_with_reference(self, config: GenerationConfig, device: torch.device) -> list[SampleOutput]:
         """Generate with reference video conditioning (IC-LoRA style).
         For IC-LoRA:
         - Reference video latents are concatenated with target latents
@@ -275,11 +312,14 @@ class ValidationSampler:
         - If include_reference_in_output is True, the preprocessed reference video
           is concatenated side-by-side with the generated video
         """
+        if config.seeds is not None and len(config.seeds) > 1:
+            raise ValueError("Multi-seed batching is not supported with reference video conditioning")
+
         # Get prompt embeddings (from cache or encode on-the-fly)
         embeddings = self._get_prompt_embeddings(config, device)
 
         # Setup generator
-        generator = torch.Generator(device=device).manual_seed(config.seed)
+        generator = torch.Generator(device=device).manual_seed(config.resolved_seeds[0])
 
         # Preprocess and encode reference video
         ref_video_preprocessed = self._preprocess_reference_video(config)
@@ -300,9 +340,10 @@ class ValidationSampler:
 
         # Apply first-frame image conditioning to target if provided
         if config.condition_image is not None:
-            target_clean_state = self._apply_image_conditioning(
-                target_clean_state, config.condition_image, config, device
+            encoded_image = self._encode_conditioning_image(
+                config.condition_image, config.height, config.width, device
             )
+            target_clean_state = self._apply_image_conditioning(target_clean_state, encoded_image)
 
         # Create combined state (reference + target)
         # denoise_mask shape is [B, seq_len, 1] after patchification
@@ -339,9 +380,9 @@ class ValidationSampler:
             device=device,
         )
 
-        # Extract target portion and decode
-        target_latent = combined_state.latent[:, ref_seq_len:]
-        video_output = self._decode_video_latent(target_latent, config, device)
+        # Extract target portion, unpatchify, and decode
+        target_latent = self._unpatchify_target_latent(combined_state.latent[:, ref_seq_len:], config)
+        video_output = self._decode_video_rows([target_latent], device, config.tiled_decoding)[0]
 
         # Optionally concatenate original reference video side-by-side
         if config.include_reference_in_output:
@@ -354,12 +395,21 @@ class ValidationSampler:
 
         # Decode audio
         audio_output = None
+        audio_latent = None
         if audio_state is not None and audio_tools is not None:
             audio_state = audio_tools.clear_conditioning(audio_state)
             audio_state = audio_tools.unpatchify(audio_state)
-            audio_output = self._decode_audio(audio_state, device)
+            audio_latent = audio_state.latent.to(torch.bfloat16)
+            audio_output = self._decode_audio_rows([audio_latent], device)[0]
 
-        return video_output, audio_output
+        return [
+            SampleOutput(
+                video=video_output,
+                audio=audio_output,
+                latent=target_latent[0].cpu(),
+                audio_latent=audio_latent[0].cpu() if audio_latent is not None else None,
+            )
+        ]
 
     def _create_video_latent_tools(self, config: GenerationConfig) -> VideoLatentTools:
         """Create video latent tools for the given configuration."""
@@ -385,13 +435,8 @@ class ValidationSampler:
             target_shape=AudioLatentShape.from_duration(batch=1, duration=config.num_frames / config.frame_rate),
         )
 
-    def _apply_image_conditioning(
-        self, video_state: LatentState, image: Tensor, config: GenerationConfig, device: torch.device
-    ) -> LatentState:
-        """Apply first-frame image conditioning to the video state."""
-        # Encode the image
-        encoded_image = self._encode_conditioning_image(image, config.height, config.width, device)
-
+    def _apply_image_conditioning(self, video_state: LatentState, encoded_image: Tensor) -> LatentState:
+        """Apply first-frame conditioning to the video state from a pre-encoded image latent."""
         # Patchify the encoded image (single frame)
         patchified_image = self._video_patchifier.patchify(encoded_image)  # [1, 1, C] -> [1, num_patches, C]
         num_image_tokens = patchified_image.shape[1]
@@ -687,9 +732,8 @@ class ValidationSampler:
             ),
         )
 
-    def _decode_video_latent(self, latent: Tensor, config: GenerationConfig, device: torch.device) -> Tensor:
-        """Decode patchified video latent to pixel space."""
-        # Unpatchify
+    def _unpatchify_target_latent(self, latent: Tensor, config: GenerationConfig) -> Tensor:
+        """Unpatchify [1, seq_len, C] target tokens to [1, C, F, H, W] bfloat16."""
         latent_frames = config.num_frames // self._video_scale_factors.time + 1
         latent_height = config.height // self._video_scale_factors.height
         latent_width = config.width // self._video_scale_factors.width
@@ -704,22 +748,7 @@ class ValidationSampler:
                 channels=128,
             ),
         )
-
-        # Decode - ensure bfloat16 to match decoder weights
-        self._vae_decoder.to(device)
-        unpatchified = unpatchified.to(dtype=torch.bfloat16)
-
-        tiling_config = self._decode_tiling_config(unpatchified, device, config.tiled_decoding)
-        if tiling_config is not None:
-            chunks = list(self._vae_decoder.tiled_decode(unpatchified, tiling_config=tiling_config))
-            decoded_video = torch.cat(chunks, dim=2)
-        else:
-            decoded_video = self._vae_decoder(unpatchified)
-
-        decoded_video = ((decoded_video + 1.0) / 2.0).clamp(0.0, 1.0)
-        self._vae_decoder.to("cpu")
-
-        return decoded_video[0].float().cpu()
+        return unpatchified.to(dtype=torch.bfloat16)
 
     def _validate_config(self, config: GenerationConfig) -> None:
         """Validate generation configuration."""
@@ -770,46 +799,48 @@ class ValidationSampler:
             audio_context_negative=a_ctx_neg,
         )
 
-    def _decode_video(
-        self, video_state: LatentState, device: torch.device, tiled_config: TiledDecodingConfig | None = None
-    ) -> Tensor:
-        """Decode video latents to pixel space.
+    def _decode_video_rows(
+        self, latents: list[Tensor], device: torch.device, tiled_config: TiledDecodingConfig | None = None
+    ) -> list[Tensor]:
+        """Decode a list of [1, C, F, H, W] video latents with a single decoder transfer.
         Args:
-            video_state: Video latent state to decode
+            latents: Video latents to decode, one [1, C, F, H, W] tensor per sample
             device: Device to run decoding on
             tiled_config: Optional tiled decoding configuration for reduced VRAM usage
         Returns:
-            Decoded video tensor [C, F, H, W] in [0, 1] range
+            Decoded video tensors [C, F, H, W] in [0, 1] range, one per input latent
         """
         self._vae_decoder.to(device)
-        # Ensure latent is bfloat16 to match decoder weights
-        latent = video_state.latent.to(dtype=torch.bfloat16)
+        videos = []
+        for row in latents:
+            # Ensure latent is bfloat16 to match decoder weights
+            latent = row.to(device=device, dtype=torch.bfloat16)
 
-        tiling_config = self._decode_tiling_config(latent, device, tiled_config)
-        if tiling_config is not None:
-            chunks = list(self._vae_decoder.tiled_decode(latent, tiling_config=tiling_config))
-            decoded_video = torch.cat(chunks, dim=2)
-        else:
-            decoded_video = self._vae_decoder(latent)
+            tiling_config = self._decode_tiling_config(latent, device, tiled_config)
+            if tiling_config is not None:
+                chunks = list(self._vae_decoder.tiled_decode(latent, tiling_config=tiling_config))
+                decoded_video = torch.cat(chunks, dim=2)
+            else:
+                decoded_video = self._vae_decoder(latent)
 
-        decoded_video = ((decoded_video + 1.0) / 2.0).clamp(0.0, 1.0)
+            decoded_video = ((decoded_video + 1.0) / 2.0).clamp(0.0, 1.0)
+            videos.append(decoded_video[0].float().cpu())
         self._vae_decoder.to("cpu")
-        return decoded_video[0].float().cpu()
+        return videos
 
-    def _decode_audio(self, audio_state: LatentState, device: torch.device) -> Tensor:
-        """Decode audio latents to waveform."""
+    def _decode_audio_rows(self, latents: list[Tensor], device: torch.device) -> list[Tensor]:
+        """Decode a list of audio latents to waveforms with a single decoder/vocoder transfer."""
         self._audio_decoder.to(device)
         first_param = next(self._audio_decoder.parameters(), None)
-        decoder_dtype = first_param.dtype if first_param is not None else audio_state.latent.dtype
-        latent = audio_state.latent.to(dtype=decoder_dtype, device=device)
-        decoded_audio = self._audio_decoder(latent)
+        decoder_dtype = first_param.dtype if first_param is not None else latents[0].dtype
+        decoded = [self._audio_decoder(latent.to(dtype=decoder_dtype, device=device)) for latent in latents]
         self._audio_decoder.to("cpu")
 
         self._vocoder.to(device)
-        audio_waveform = self._vocoder(decoded_audio)
+        waveforms = [self._vocoder(decoded_audio).squeeze(0).float().cpu() for decoded_audio in decoded]
         self._vocoder.to("cpu")
 
-        return audio_waveform.squeeze(0).float().cpu()
+        return waveforms
 
     @staticmethod
     def _concatenate_videos_side_by_side(left_video: Tensor, right_video: Tensor) -> Tensor:

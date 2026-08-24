@@ -458,6 +458,96 @@ class ValidationConfig(ConfigBaseModel):
         return self
 
 
+class DpoConfig(ConfigBaseModel):
+    """Configuration for Live-DPO: human-in-the-loop preference optimization interleaved with training.
+
+    Every ``interval`` steps the trainer renders ``num_seeds`` videos for each of ``num_samples``
+    randomly drawn entries from ``samples_dir``, halts, and waits for best/worst labels
+    (submitted through the UI). The labeled pairs then drive short Flow-DPO bursts every
+    ``run_interval`` steps until the next labeling round. See https://arxiv.org/abs/2501.13918.
+    """
+
+    samples_dir: str = Field(
+        description="Folder with labeling-round inputs: .txt prompt files, each optionally "
+        "paired with a same-stem image (png/jpg/jpeg/webp) for image-to-video conditioning.",
+    )
+
+    num_samples: int = Field(
+        default=4,
+        description="Number of entries randomly sampled from samples_dir per labeling round.",
+        ge=1,
+    )
+
+    num_seeds: int = Field(
+        default=3,
+        description="Number of seeds generated per sample in each labeling round.",
+        ge=2,
+    )
+
+    interval: int = Field(
+        description="Number of training steps between labeling rounds. "
+        "Training halts at each round until labels are submitted.",
+        gt=0,
+    )
+
+    run_interval: int = Field(
+        description="Number of training steps between short DPO bursts (only runs while labeled pairs exist).",
+        gt=0,
+    )
+
+    steps_per_run: int = Field(
+        default=10,
+        description="Number of DPO optimization steps per burst.",
+        gt=0,
+    )
+
+    beta: float = Field(
+        default=500.0,
+        description="Flow-DPO KL-regularization strength (constant beta variant).",
+        gt=0.0,
+    )
+
+    generate_audio: bool = Field(
+        default=True,
+        description="Generate audio in labeling-round videos. The video branch cross-attends to audio, "
+        "so generating without it samples a different (weaker) conditional than joint inference. "
+        "When True, the final audio latents are saved and the audio modality participates in the "
+        "DPO forward pass.",
+    )
+
+    audio_loss_weight: float = Field(
+        default=0.0,
+        description="Weight of the audio velocity-MSE margin in the Flow-DPO loss "
+        "(margin = video + audio_loss_weight * audio). 0.0 keeps preferences video-only while audio "
+        "still conditions the forward pass. Requires generate_audio.",
+        ge=0.0,
+    )
+
+    learning_rate: float | None = Field(
+        default=None,
+        description="Learning rate used during DPO bursts. None reuses the current optimizer LR.",
+    )
+
+    inference_steps: int | None = Field(
+        default=None,
+        description="Denoising steps for labeling-round generation. None reuses validation.inference_steps.",
+        gt=0,
+    )
+
+    @field_validator("samples_dir")
+    @classmethod
+    def validate_samples_dir(cls, v: str) -> str:
+        if not Path(v).expanduser().is_dir():
+            raise ValueError(f"DPO samples_dir does not exist or is not a directory: {v}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_audio_settings(self) -> "DpoConfig":
+        if self.audio_loss_weight > 0 and not self.generate_audio:
+            raise ValueError("dpo.audio_loss_weight > 0 requires dpo.generate_audio to be enabled")
+        return self
+
+
 class CheckpointsConfig(ConfigBaseModel):
     """Configuration for model checkpointing during training"""
 
@@ -572,6 +662,10 @@ class LtxTrainerConfig(ConfigBaseModel):
     acceleration: AccelerationConfig = Field(default_factory=AccelerationConfig)
     data: DataConfig
     validation: ValidationConfig = Field(default_factory=ValidationConfig)
+    dpo: DpoConfig | None = Field(
+        default=None,
+        description="Live-DPO configuration. When set, labeling rounds and DPO bursts are interleaved with training.",
+    )
     checkpoints: CheckpointsConfig = Field(default_factory=CheckpointsConfig)
     hub: HubConfig = Field(default_factory=HubConfig)
     flow_matching: FlowMatchingConfig = Field(default_factory=FlowMatchingConfig)
@@ -616,5 +710,15 @@ class LtxTrainerConfig(ConfigBaseModel):
         # Check that LoRA config is provided when using video_to_video strategy
         if self.training_strategy.name == "video_to_video" and self.model.training_mode != "lora":
             raise ValueError("Training mode must be 'lora' when using video_to_video strategy")
+
+        # Live-DPO relies on the base model (LoRA adapters disabled) as the frozen reference
+        # and on text_to_video input preparation.
+        if self.dpo is not None:
+            if self.model.training_mode != "lora":
+                raise ValueError("Live-DPO requires training_mode 'lora' (the base model serves as the reference)")
+            if self.training_strategy.name != "text_to_video":
+                raise ValueError("Live-DPO is only supported with the text_to_video training strategy")
+            if self.validation.video_dims[2] == 1:
+                raise ValueError("Live-DPO requires video validation dims (validation.video_dims frames > 1)")
 
         return self

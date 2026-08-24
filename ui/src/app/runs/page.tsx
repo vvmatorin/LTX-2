@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useJobs } from '@/hooks/useJobs';
 import { useTensorboard } from '@/hooks/useTensorboard';
+import { useDpoRounds } from '@/hooks/useDpo';
+import { DpoLabeling } from '@/components/DpoLabeling';
 import { formatDuration } from '@/lib/format';
 import { JobQueueList } from '@/components/JobQueueList';
 import { PageHeader } from '@/components/PageHeader';
@@ -14,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Separator } from '@/components/ui/separator';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Loader2, Square, ChevronDown, Clock, Activity, BarChart3, X } from 'lucide-react';
+import { Loader2, Square, ChevronDown, Clock, Activity, BarChart3, ListChecks, X } from 'lucide-react';
 import { cn, toErrorMessage } from '@/lib/utils';
 
 // xterm is ~150KB and only used while a job is active; load it lazily.
@@ -32,6 +34,7 @@ export default function RunsPage() {
   const { jobs, stopJob, error: jobsError } = useJobs();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tbFullscreen, setTbFullscreen] = useState(false);
+  const [dpoStep, setDpoStep] = useState<number | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
 
   const activeJob = useMemo(() => jobs.find(j => j.status === 'running') ?? null, [jobs]);
@@ -39,6 +42,8 @@ export default function RunsPage() {
   const historyJobs = useMemo(() => jobs.filter(j => ['completed', 'failed', 'cancelled'].includes(j.status)), [jobs]);
 
   const { running: tbRunning, ready: tbReady } = useTensorboard(activeJob);
+  const { rounds: dpoRounds, pendingRound, submitLabels, isSubmitting } = useDpoRounds(activeJob);
+  const dpoRound = dpoStep != null ? (dpoRounds.find(r => r.step === dpoStep) ?? null) : null;
 
   const handleStop = async (id: number) => {
     setStopError(null);
@@ -85,6 +90,21 @@ export default function RunsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {activeJob.type === 'training' && pendingRound && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300"
+                    onClick={() => setDpoStep(pendingRound.step)}
+                  >
+                    <span className="relative mr-1.5 flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                    </span>
+                    <ListChecks className="mr-1.5 h-3 w-3" />
+                    Label DPO
+                  </Button>
+                )}
                 {activeJob.type === 'training' && (
                   <Button variant="outline" size="sm" disabled={!tbReady} onClick={() => setTbFullscreen(true)}>
                     {tbRunning && !tbReady ? (
@@ -175,6 +195,30 @@ export default function RunsPage() {
           </div>
           {tbReady ? (
             <iframe src="/tensorboard/" className="w-full flex-1 border-0" title="TensorBoard Fullscreen" />
+          ) : (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {dpoStep != null && activeJob && (
+        <div className="bg-background fixed inset-0 z-50 flex flex-col">
+          <div className="flex items-center justify-between border-b px-4 py-2">
+            <span className="text-sm font-medium">Live-DPO Labeling</span>
+            <Button variant="ghost" size="sm" onClick={() => setDpoStep(null)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          {dpoRound ? (
+            <DpoLabeling
+              key={dpoRound.step}
+              jobId={activeJob.id}
+              round={dpoRound}
+              submitLabels={submitLabels}
+              isSubmitting={isSubmitting}
+            />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />

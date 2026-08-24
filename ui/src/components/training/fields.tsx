@@ -120,6 +120,57 @@ export function TextField({
   );
 }
 
+export function NullableNumberField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  step,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  placeholder?: string;
+  step?: number;
+}) {
+  const [raw, setRaw] = useState<string>(() => (value == null ? '' : String(value)));
+
+  // Same external-sync approach as NumberField, with '' representing null.
+  useEffect(() => {
+    if (raw === '-' || raw.endsWith('.') || raw.endsWith('e') || raw.endsWith('e-')) return;
+    if (raw === '' ? value == null : Number(raw) === value) return;
+    setRaw(value == null ? '' : String(value));
+  }, [value, raw]);
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">{label}</Label>
+      <Input
+        type="number"
+        step={step}
+        value={raw}
+        placeholder={placeholder}
+        onChange={e => {
+          const next = e.target.value;
+          setRaw(next);
+          if (next === '') {
+            onChange(null);
+            return;
+          }
+          const n = Number(next);
+          if (next !== '-' && Number.isFinite(n)) {
+            onChange(n);
+          }
+        }}
+        onBlur={() => {
+          if (raw !== '' && !Number.isFinite(Number(raw))) setRaw(value == null ? '' : String(value));
+        }}
+        className="text-xs"
+      />
+    </div>
+  );
+}
+
 export function SelectField({
   label,
   value,
