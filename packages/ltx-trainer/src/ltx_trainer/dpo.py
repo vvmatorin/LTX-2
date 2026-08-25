@@ -109,12 +109,8 @@ class DpoState:
         return max(1, (len(self.pairs) * repeats + world_size - 1) // world_size)
 
     def in_window(self, global_step: int, interval: int, repeats: int, world_size: int) -> bool:
-        """Whether an optimization step falls inside a combined SFT+DPO window.
-
-        A window opens every ``interval`` steps and spans ``window_steps`` consecutive
-        steps; without labeled pairs there are no windows.
-        """
-        return bool(self.pairs) and global_step % interval < self.window_steps(repeats, world_size)
+        """Whether an optimization step falls inside a combined SFT+DPO window."""
+        return bool(self.pairs) and (global_step - 1) % interval < self.window_steps(repeats, world_size)
 
     @contextmanager
     def reference_swapped(self, named_params: list[tuple[str, Tensor]]) -> Iterator[None]:
@@ -442,5 +438,3 @@ def flow_dpo_loss(
     metrics["dpo/margin"] = -margin.item()
     metrics["dpo/accuracy"] = float(margin.item() < 0)
     return loss, metrics
-
-
