@@ -1573,6 +1573,7 @@ class LtxvTrainer:
             fps=self._config.validation.frame_rate,
             scale_factors=self._training_strategy.video_scale_factors,
             device=self._accelerator.device,
+            timestep_sampler=self._timestep_sampler,
         )
 
         def compute_mses(video_pred: Tensor, audio_pred: Tensor | None) -> tuple[Tensor, Tensor | None]:
@@ -1593,7 +1594,7 @@ class LtxvTrainer:
             )
             ref_mse, ref_audio_mse = compute_mses(ref_video_pred, ref_audio_pred)
 
-        return dpo.flow_dpo_loss(
+        loss, metrics = dpo.flow_dpo_loss(
             policy_mse,
             ref_mse,
             dpo_cfg.beta,
@@ -1601,6 +1602,11 @@ class LtxvTrainer:
             ref_audio_mse=ref_audio_mse,
             audio_loss_weight=dpo_cfg.audio_loss_weight,
         )
+
+        sigma_weights = self._get_sigma_loss_weights(inputs.sigma)
+        if sigma_weights is not None:
+            loss = loss * sigma_weights[0]
+        return loss, metrics
 
     @staticmethod
     def _log_training_stats(stats: TrainingStats) -> None:

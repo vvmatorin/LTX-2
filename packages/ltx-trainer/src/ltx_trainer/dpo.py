@@ -26,6 +26,7 @@ from ltx_core.components.patchifiers import AudioPatchifier, VideoLatentPatchifi
 from ltx_core.model.transformer.modality import Modality
 from ltx_core.types import SpatioTemporalScaleFactors
 from ltx_trainer import logger
+from ltx_trainer.timestep_samplers import TimestepSampler
 from ltx_trainer.training_strategies.base_strategy import (
     ModelInputs,
     create_per_token_timesteps,
@@ -303,13 +304,16 @@ def prepare_pair_inputs(
     fps: float,
     scale_factors: SpatioTemporalScaleFactors,
     device: torch.device,
+    timestep_sampler: TimestepSampler,
 ) -> ModelInputs:
     """Build transformer inputs for a stacked [chosen; rejected] pair (row 0 = chosen).
 
-    Mirrors the text_to_video SFT input preparation: shared sigma (uniform, per Flow-DPO)
-    and shared noise across the pair, first-frame conditioning for i2v pairs, velocity
-    targets. When the pair carries audio latents, the audio modality is included (noised
-    at the same sigma, like joint SFT) so the video branch sees its audio context.
+    Mirrors the text_to_video SFT input preparation: a shared sigma drawn from the same
+    timestep sampler as regular training (so preference pressure lands on the sigma range
+    SFT actually maintains) and shared noise across the pair, first-frame conditioning
+    for i2v pairs, velocity targets. When the pair carries audio latents, the audio
+    modality is included (noised at the same sigma, like joint SFT) so the video branch
+    sees its audio context.
     """
     latents = torch.stack([pair.chosen_latent, pair.rejected_latent]).to(device=device, dtype=torch.bfloat16)
     _, _, num_frames, height, width = latents.shape
@@ -317,7 +321,7 @@ def prepare_pair_inputs(
     seq_len = tokens.shape[1]
     frame_tokens = height * width
 
-    sigma = torch.rand(1, device=device)
+    sigma = timestep_sampler.sample_for(tokens[:1])  # [1], shared across the pair
     noise = torch.randn(1, seq_len, tokens.shape[2], device=device, dtype=tokens.dtype)
     noisy = (1 - sigma) * tokens + sigma * noise
     targets = noise - tokens
