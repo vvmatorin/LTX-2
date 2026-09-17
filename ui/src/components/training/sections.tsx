@@ -184,11 +184,18 @@ export function LoraSection({ config, update }: SectionProps) {
           step={0.01}
         />
       </div>
-      <SwitchField
-        label="Freeze Extra Modules"
-        checked={config.lora.freezeExtraModules}
-        onChange={v => update('lora', { freezeExtraModules: v })}
-      />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <SelectField
+          label="Extra Modules"
+          value={config.lora.extraModules}
+          onChange={v => update('lora', { extraModules: v })}
+          options={[
+            { value: 'drop', label: 'Drop modules' },
+            { value: 'freeze', label: 'Freeze modules' },
+            { value: 'trim', label: 'Trim to checkpoint' },
+          ]}
+        />
+      </div>
       <div className="space-y-2">
         <Label className="text-xs">Target Layers</Label>
         <div className="flex flex-wrap gap-2">

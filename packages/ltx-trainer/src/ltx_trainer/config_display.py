@@ -51,6 +51,7 @@ def print_config(config: LtxTrainerConfig) -> None:
                     ("Rank / Alpha", f"{cfg.lora.rank} / {cfg.lora.alpha}"),
                     ("Dropout", str(cfg.lora.dropout)),
                     ("Target Modules", fmt(cfg.lora.target_modules)),
+                    ("Extra Modules", cfg.lora.extra_modules),
                 ],
             )
         )

@@ -101,12 +101,14 @@ class LoraConfig(ConfigBaseModel):
         description="List of modules to target with LoRA",
     )
 
-    freeze_extra_modules: bool = Field(
-        default=True,
+    extra_modules: Literal["drop", "freeze", "trim"] = Field(
+        default="freeze",
         description=(
-            "When loading a checkpoint whose LoRA coverage exceeds the configured "
-            "target_modules, inject the extra modules and freeze them instead of "
-            "dropping their weights. Frozen layers still contribute to the forward pass."
+            "How target_modules is reconciled with the LoRA modules of model.load_checkpoint. "
+            "'drop': train target_modules and discard the checkpoint's other weights. "
+            "'freeze': train target_modules and keep the checkpoint's other modules injected but frozen. "
+            "'trim': inject only the checkpoint's modules; train those matching target_modules, freeze the rest. "
+            "No effect without a checkpoint."
         ),
     )
 

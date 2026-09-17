@@ -114,7 +114,7 @@ export interface TrainingConfig {
     alpha: number;
     dropout: number;
     targetModules: string[];
-    freezeExtraModules: boolean;
+    extraModules: 'drop' | 'freeze' | 'trim';
   };
   trainingStrategy: {
     name: 'text_to_video' | 'video_to_video';

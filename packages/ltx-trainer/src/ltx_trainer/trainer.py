@@ -722,23 +722,31 @@ class LtxvTrainer:
     def _setup_lora(self) -> None:
         """Configure LoRA adapters for the transformer. Only called in LoRA training mode."""
         logger.debug(f"Adding LoRA adapter with rank {self._config.lora.rank}")
-        train_targets = list(self._config.lora.target_modules)
-        effective_targets = train_targets
+        configured = list(self._config.lora.target_modules)
+        train_targets = configured
+        injected_targets = configured
 
-        # When freezing extra modules, inject LoRA layers for every module present in the
-        # checkpoint (not just the trainable targets) so their weights have somewhere to land.
-        if self._config.lora.freeze_extra_modules and self._config.model.load_checkpoint:
-            ckpt_path = self._find_checkpoint(self._config.model.load_checkpoint)
-            if ckpt_path:
-                ckpt_modules = detect_checkpoint_lora_modules(ckpt_path)
-                extra = sorted(p for p in ckpt_modules if not matches_any_lora_target(p, train_targets))
-                if extra:
-                    effective_targets = train_targets + extra
+        load_checkpoint = self._config.model.load_checkpoint
+        ckpt_path = self._find_checkpoint(load_checkpoint) if load_checkpoint else None
+        ckpt_modules = sorted(detect_checkpoint_lora_modules(ckpt_path)) if ckpt_path else []
+        mode = self._config.lora.extra_modules
+
+        if ckpt_modules and mode == "trim":
+            train_targets = [m for m in ckpt_modules if matches_any_lora_target(m, configured)]
+            if not train_targets:
+                raise ValueError(
+                    f"lora.extra_modules 'trim' left nothing to train: "
+                    f"no LoRA module in {ckpt_path} matches target_modules {configured}"
+                )
+            injected_targets = ckpt_modules
+        elif ckpt_modules and mode == "freeze":
+            injected_targets = configured + [m for m in ckpt_modules if not matches_any_lora_target(m, configured)]
+        self._lora_train_targets = train_targets
 
         lora_config = LoraConfig(
             r=self._config.lora.rank,
             lora_alpha=self._config.lora.alpha,
-            target_modules=effective_targets,
+            target_modules=injected_targets,
             lora_dropout=self._config.lora.dropout,
             init_lora_weights=True,
         )
@@ -793,8 +801,8 @@ class LtxvTrainer:
 
         # Freeze LoRA layers that came from the checkpoint but are not in the training targets.
         # This changes requires_grad after _collect_trainable_params ran, so re-sync the list.
-        if self._config.lora.freeze_extra_modules:
-            n = freeze_extra_lora_layers(self._transformer, list(self._config.lora.target_modules))
+        if self._config.lora.extra_modules != "drop":
+            n = freeze_extra_lora_layers(self._transformer, self._lora_train_targets)
             self._trainable_params = [p for p in self._transformer.parameters() if p.requires_grad]
             logger.info(f"Frozen {n} LoRA layer(s) from checkpoint that are not in training target_modules.")
 
